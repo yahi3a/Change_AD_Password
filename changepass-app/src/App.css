@@ -1,0 +1,174 @@
+@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
+
+.App {
+  font-family: 'Roboto', sans-serif;
+  min-height: 100vh;
+  background-image: url('./assets/background.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  display: flex;
+  justify-content: space-between; /* Pushes left and right content apart */
+  align-items: flex-start; /* Aligns content to the top */
+  padding: 20px; /* Reduced padding for tighter layout */
+  position: relative;
+}
+
+/* Left Container Styles */
+.left-container {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start; /* Aligns logo, h1, and form to the left */
+  gap: 10px; /* Adds spacing between logo, h1, and form */
+}
+
+/* Logo styles (optional, if you want to tweak further) */
+.left-container img {
+  margin: 0; /* Remove default margin if any */
+}
+
+/* Title styles */
+h1 {
+  color: #F2B390;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
+  margin: 0; /* Remove default margin */
+  padding: 5px 10px;
+  border-radius: 5px;
+}
+
+/* Top Buttons (Right Side) */
+.top-buttons {
+  display: flex;
+  gap: 10px;
+}
+
+/* Form Styles (unchanged except for tighter spacing) */
+form {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 15px;
+  background-color: rgba(255, 255, 255, 0.3);
+  padding: 30px; /* Slightly reduced padding */
+  border-radius: 15px;
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+  width: 50%;
+  max-width: 600px;
+  min-width: 300px;
+}
+
+@media (max-width: 600px) {
+  form {
+    width: 90%;
+  }
+}
+
+div {
+  display: flex;
+  align-items: center;
+  width: 100%;
+  gap:10px;
+}
+
+label {
+  width: 140px;
+  text-align: left;
+  font-size: 18px;
+  font-weight: bold;
+  color: #0c038a;
+  text-shadow: 2px 2px 4px rgba(238, 238, 240, 0.4);
+}
+
+input {
+  flex: 1;
+  padding: 8px;
+  font-size: 15px;
+  border: 1px solid #e3e3e8;
+  border-radius: 5px;
+  min-width: 0;
+}
+
+input:focus {
+  border-color: #f0ddbc;
+  outline: 2px solid #F2B390;
+  box-shadow: 0 0 20px rgba(242, 179, 144, 0.5);
+}
+
+button {
+  padding: 10px 20px;
+  font-size: 16px;
+  background-color: #F2B390;
+  border: 1px solid #e47f49;
+  color: #0c038a;
+  border-radius: 5px;
+  cursor: pointer;
+  margin-left: 140px;
+  transition: all 0.3s ease;
+}
+
+button:hover {
+  background-color: #e47f49;
+  color: #ffffff;
+  border-color: #d8642a;
+}
+
+.language-toggle,
+.logout {
+  padding: 3px 8px;
+  font-size: 12px;
+  background-color: rgba(22, 1, 126, 0.1);
+  color: #04458b;
+  border: none;
+  border-radius: 5px;
+  cursor: pointer;
+}
+
+.language-toggle:hover,
+.logout:hover {
+  background-color: #16017e;
+}
+
+form p {
+  margin: 2px 0;
+  padding: 0;
+  width: 100%;
+  text-align: left;
+  color: #f50505;
+  font-weight: bold;
+  font-size: 14px;
+  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.9);
+  background-color: rgba(255, 255, 255, 0);
+  border-radius: 5px;
+  padding: 5px;
+}
+
+form p.success {
+  color: #5bdc5f;
+}
+
+form p.error {
+  color: #f50505;
+}
+
+form p.welcome {
+  width: 100%;
+  text-align: center;
+  color: #F2B390;
+  font-weight: bold;
+  font-size: 18px;
+  text-shadow: 2px 2px 4px rgba(0, 0, 10, 0.9);
+  margin: 0 0 10px 0;
+}
+
+.show-password {
+  margin-left: 5px;
+  padding: 3px 8px;
+  font-size: 12px;
+  background-color: #e3e3e800;
+  color: #2907c2;
+  cursor: pointer;
+}
+
+.show-password:hover {
+  background-color: #d1d1d656;
+}
