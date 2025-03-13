@@ -14,7 +14,6 @@
   position: relative;
 }
 
-/* Existing styles remain unchanged until the end */
 .App.processing {
   cursor: wait; /* Changes cursor to "wait" during processing */
 }
