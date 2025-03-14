@@ -52,7 +52,7 @@ form {
   flex-direction: column;
   align-items: flex-start;
   gap: 15px;
-  background-color: rgba(255, 255, 255, 0.3);
+  background-color: rgba(255, 255, 255, 0.5);
   padding: 10px 40px;
   border-radius: 15px;
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
@@ -163,11 +163,11 @@ form p {
 }
 
 form p.success {
-  color: #5bdc5f;
+  color: #1aa51f;
   font-size: 18px;
   font-weight: bold;
   text-align: center;
-  text-shadow: 2px 2px 4px rgba(0, 0, 10, 0.9);
+  text-shadow: 2px 2px 4px rgba(244, 244, 244, 0.9);
 }
 
 form p.error {
