@@ -79,8 +79,8 @@ label {
   text-align: left;
   font-size: 18px;
   font-weight: bold;
-  color: #0c038a;
-  text-shadow: 2px 2px 4px rgba(238, 238, 240, 0.4);
+  color: rgba(0, 0, 2, 0.65);
+  text-shadow: 2px 2px 4px rgb(255, 255, 255, 0.99);
 }
 
 input {
@@ -94,7 +94,7 @@ input {
 
 input:focus {
   border-color: #f0ddbc;
-  outline: 1px solid #F2B390;
+  outline: 1px solid rgb(1, 68, 140);
   box-shadow: 0 0 20px rgba(242, 179, 144, 0.5);
 }
 
@@ -102,8 +102,8 @@ button {
   padding: 10px 20px;
   font-size: 16px;
   background-color: #F2B390;
-  border: 1px solid #e47f49;
-  color: #0c038a;
+  border: none;
+  color: rgba(0, 0, 2, 0.9);
   border-radius: 5px;
   cursor: pointer;
   margin-left: 140px;
@@ -111,7 +111,7 @@ button {
 }
 
 button:hover {
-  background-color: #e47f49;
+  background-color: #c06534;
   color: #ffffff;
   border-color: #d8642a;
 }
@@ -163,11 +163,11 @@ form p {
 }
 
 form p.success {
-  color: #1aa51f;
+  color: rgb(1, 140, 120);
   font-size: 18px;
   font-weight: bold;
   text-align: center;
-  text-shadow: 2px 2px 4px rgba(244, 244, 244, 0.9);
+  text-shadow: 2px 2px 4px rgba(254, 254, 254, 0.99);
 }
 
 form p.error {
@@ -196,4 +196,25 @@ form p.welcome {
 
 .show-password:hover {
   background-color: #d1d1d656;
+}
+
+.result-messages {
+  margin-top: 10px;
+}
+
+.result-messages p {
+  margin: 5px 0; /* Space between the two lines */
+}
+
+.success {
+  color: green;
+  line-height: 20px;
+  text-shadow: 2px 2px 4px rgb(254, 254, 254);
+}
+
+.error {
+  color: red;
+}
+.warning {
+  color: orange;
 }

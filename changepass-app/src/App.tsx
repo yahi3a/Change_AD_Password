@@ -22,6 +22,7 @@ interface Translation {
   newPasswordPlaceholder: string;
   confirmPlaceholder: string;
   passwordRequirement: string;
+  azurePendingWarning: string; // New translation for Azure AD retry
 }
 
 interface Translations {
@@ -43,7 +44,7 @@ function App() {
   const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
   const [language, setLanguage] = useState<'en' | 'vi'>('en');
   const [passwordChanged, setPasswordChanged] = useState<boolean>(false);
-  const [isProcessing, setIsProcessing] = useState<boolean>(false); // New state for processing indicator
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
 
   const translations: Translations = {
     en: {
@@ -57,7 +58,7 @@ function App() {
       newPasswordLabel: 'New Password: ',
       confirmLabel: 'Confirm: ',
       changePasswordButton: 'Change Password',
-      successMessage: 'Password changed successfully for ',
+      successMessage: 'Windows login password and Email/Office 365 account password changed successfully for user: ',
       matchError: 'Passwords do not match.',
       fieldsError: 'Please fill in all fields.',
       logoutButton: 'Logout',
@@ -66,6 +67,7 @@ function App() {
       newPasswordPlaceholder: 'Enter new password',
       confirmPlaceholder: 'Re-enter new password',
       passwordRequirement: 'The password must be at least 11 characters long and contain at least three of these four elements: an uppercase letter, a lowercase letter, a number, and a special character. It must also NOT include your USERNAME.',
+      azurePendingWarning: 'Windows login password changed, but Email/Office 365 account password might take 24h to sync. Please try again later.',
     },
     vi: {
       title: 'GELEXIMCO - QUẢN LÝ TÀI KHOẢN',
@@ -78,7 +80,7 @@ function App() {
       newPasswordLabel: 'Mật khẩu mới: ',
       confirmLabel: 'Xác nhận: ',
       changePasswordButton: 'Đổi mật khẩu',
-      successMessage: 'Mật khẩu đã được thay đổi thành công cho ',
+      successMessage: 'Mật khẩu đăng nhập Windows và Mật khẩu tài khoản Email & Office 365 đã được thay đổi thành công cho người dùng: ',
       matchError: 'Mật khẩu không khớp.',
       fieldsError: 'Vui lòng điền đầy đủ các mục.',
       logoutButton: 'Đăng xuất',
@@ -87,6 +89,7 @@ function App() {
       newPasswordPlaceholder: 'Nhập mật khẩu mới',
       confirmPlaceholder: 'Nhập lại mật khẩu mới',
       passwordRequirement: 'Mật khẩu dài tối thiểu 11 ký tự và chứa ít nhất ba trong bốn yếu tố sau: chữ viết hoa, chữ viết thường, số và ký tự đặc biệt. Ngoài ra, KHÔNG ĐƯỢC bao gồm TÊN NGƯỜI DÙNG của bạn.',
+      azurePendingWarning: 'Mật khẩu đăng nhập Windows đã được thay đổi, nhưng Mật khẩu tài khoản Email & Office 365 có thể mất tới 24 giờ để cập nhật. Vui lòng thử lại sau.',
     },
   };
 
@@ -94,7 +97,7 @@ function App() {
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    setIsProcessing(true); // Set cursor to busy state
+    setIsProcessing(true);
     try {
       const response = await axios.post(`${API_URL}/login`, {
         username: loginUsername,
@@ -115,15 +118,25 @@ function App() {
       setLoginMessage(<p className="error">{translations[language].loginError}</p>);
       setTimeout(() => setLoginMessage(''), 2000);
     } finally {
-      setIsProcessing(false); // Reset cursor to default
+      setIsProcessing(false);
     }
   };
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     const passwordRegex = /^(?!.*username$)(?=(?:[^A-Z]*[A-Z]){1,})(?=(?:[^a-z]*[a-z]){1,})(?=(?:[^0-9]*[0-9]){1,})(?=(?:[^@#$!%*?&]*[@#$!%*?&]){1,}).{11,}$/;
-    if (username && password && confirmPassword) {
-      if (!passwordRegex.test(password)) {
+
+    const trimmedPassword = password.trim();
+    const trimmedConfirmPassword = confirmPassword.trim();
+
+    console.log('Form submitted with:');
+    console.log('username:', username);
+    console.log('password:', trimmedPassword);
+    console.log('confirmPassword:', trimmedConfirmPassword);
+
+    if (username && trimmedPassword && trimmedConfirmPassword) {
+      if (!passwordRegex.test(trimmedPassword)) {
+        console.log('Password does not meet regex requirements');
         setMessage(<p className="error">{translations[language].passwordRequirement}</p>);
         setTimeout(() => {
           setMessage('');
@@ -132,7 +145,9 @@ function App() {
         }, 10000);
         return;
       }
-      if (password !== confirmPassword) {
+
+      if (trimmedPassword !== trimmedConfirmPassword) {
+        console.log('Password mismatch detected:', trimmedPassword, 'vs', trimmedConfirmPassword);
         setMessage(<p className="error">{translations[language].matchError}</p>);
         setTimeout(() => {
           setMessage('');
@@ -141,13 +156,24 @@ function App() {
         }, 3000);
         return;
       }
-      setIsProcessing(true); // Set cursor to busy state
+
+      console.log('Passwords match, proceeding with API calls');
+      setIsProcessing(true);
       try {
-        const response = await axios.post(`${API_URL}/change-password`, {
+        const adResponse = await axios.post(`${API_URL}/change-ad-password`, {
           username,
-          newPassword: password,
+          newPassword: trimmedPassword,
         });
-        if (response.data.success) {
+        if (!adResponse.data.success) {
+          throw new Error(adResponse.data.message || translations[language].matchError);
+        }
+
+        const azureResponse = await axios.post(`${API_URL}/change-azure-password`, {
+          username,
+          newPassword: trimmedPassword,
+        });
+
+        if (azureResponse.data.success) {
           setMessage(
             <p className="success">
               {translations[language].successMessage}
@@ -155,28 +181,30 @@ function App() {
             </p>
           );
           setPasswordChanged(true);
-          setPassword('');
-          setConfirmPassword('');
         } else {
-          setMessage(<p className="error">{translations[language].matchError}</p>);
-          setTimeout(() => {
-            setMessage('');
-            setPassword('');
-            setConfirmPassword('');
-          }, 3000);
+          setMessage(
+            <p className="warning">
+              {translations[language].azurePendingWarning}
+              {azureResponse.data.message}
+            </p>
+          );
+          setPasswordChanged(true);
         }
-      } catch (error) {
+        setPassword('');
+        setConfirmPassword('');
+      } catch (error: any) {
         console.error('Password Change Error:', error);
-        setMessage(<p className="error">{translations[language].matchError}</p>);
+        setMessage(<p className="error">{error.message || translations[language].matchError}</p>);
         setTimeout(() => {
           setMessage('');
           setPassword('');
           setConfirmPassword('');
-        }, 3000);
+        }, 5000);
       } finally {
-        setIsProcessing(false); // Reset cursor to default
+        setIsProcessing(false);
       }
     } else {
+      console.log('Missing required fields');
       setMessage(<p className="error">{translations[language].fieldsError}</p>);
       setTimeout(() => {
         setMessage('');
@@ -225,7 +253,7 @@ function App() {
                 value={loginUsername}
                 onChange={(e) => setLoginUsername(e.target.value)}
                 placeholder={translations[language].loginPlaceholder}
-                disabled={isProcessing} // Disable input during processing
+                disabled={isProcessing}
               />
             </div>
             <div>
@@ -235,13 +263,13 @@ function App() {
                 value={loginPassword}
                 onChange={(e) => setLoginPassword(e.target.value)}
                 placeholder={translations[language].passwordPlaceholder}
-                disabled={isProcessing} // Disable input during processing
+                disabled={isProcessing}
               />
               <button
                 type="button"
                 className="show-password"
                 onClick={() => setShowLoginPassword(!showLoginPassword)}
-                disabled={isProcessing} // Disable button during processing
+                disabled={isProcessing}
               >
                 {showLoginPassword ? '👁️‍🗨️' : '👁️'}
               </button>
@@ -276,13 +304,13 @@ function App() {
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={translations[language].newPasswordPlaceholder}
-                    disabled={isProcessing} // Disable input during processing
+                    disabled={isProcessing}
                   />
                   <button
                     type="button"
                     className="show-password"
                     onClick={() => setShowNewPassword(!showNewPassword)}
-                    disabled={isProcessing} // Disable button during processing
+                    disabled={isProcessing}
                   >
                     {showNewPassword ? '👁️‍🗨️' : '👁️'}
                   </button>
@@ -294,13 +322,13 @@ function App() {
                     value={confirmPassword}
                     onChange={(e) => setConfirmPassword(e.target.value)}
                     placeholder={translations[language].confirmPlaceholder}
-                    disabled={isProcessing} // Disable input during processing
+                    disabled={isProcessing}
                   />
                   <button
                     type="button"
                     className="show-password"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    disabled={isProcessing} // Disable button during processing
+                    disabled={isProcessing}
                   >
                     {showConfirmPassword ? '👁️‍🗨️' : '👁️'}
                   </button>
@@ -319,7 +347,7 @@ function App() {
         className="language-toggle"
         onClick={() => setLanguage(language === 'en' ? 'vi' : 'en')}
         style={{ position: 'absolute', top: '20px', right: '125px' }}
-        disabled={isProcessing} // Disable during processing
+        disabled={isProcessing}
       >
         {language === 'en' ? 'Tiếng Việt' : 'English'}
       </button>
@@ -329,7 +357,7 @@ function App() {
           onClick={handleLogout}
           className="logout"
           style={{ position: 'absolute', top: '20px', right: '50px' }}
-          disabled={isProcessing} // Disable during processing
+          disabled={isProcessing}
         >
           {translations[language].logoutButton}
         </button>
