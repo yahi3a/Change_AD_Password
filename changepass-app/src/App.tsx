@@ -58,7 +58,7 @@ function App() {
       newPasswordLabel: 'New Password: ',
       confirmLabel: 'Confirm: ',
       changePasswordButton: 'Change Password',
-      successMessage: 'Windows login password and Email/Office 365 account password changed successfully for user: ',
+      successMessage: 'Windows login password & Email/Office 365 account password changed successfully for user: ',
       matchError: 'Passwords do not match.',
       fieldsError: 'Please fill in all fields.',
       logoutButton: 'Logout',
@@ -346,7 +346,7 @@ function App() {
       <button
         className="language-toggle"
         onClick={() => setLanguage(language === 'en' ? 'vi' : 'en')}
-        style={{ position: 'absolute', top: '20px', right: '125px' }}
+        style={{ position: 'absolute', top: '20px', right: '145px' }}
         disabled={isProcessing}
       >
         {language === 'en' ? 'Tiếng Việt' : 'English'}

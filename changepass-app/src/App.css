@@ -1,70 +1,59 @@
-@import url('https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap');
 
 .App {
-  font-family: 'Roboto', sans-serif;
+  font-family: 'Montserrat', sans-serif;
   min-height: 100vh;
   background-image: url('./assets/background.jpg');
   background-size: cover;
   background-position: center;
   background-repeat: no-repeat;
   display: flex;
-  justify-content: space-between;
+  justify-content: center;
   align-items: flex-start;
   padding: 20px;
   position: relative;
 }
 
 .App.processing {
-  cursor: wait; /* Changes cursor to "wait" during processing */
+  cursor: wait;
 }
 
-/* Optionally, disable pointer events on interactive elements */
 .App.processing button,
 .App.processing input {
-  pointer-events: none; /* Prevents clicks during processing */
+  pointer-events: none;
 }
 
-/* Left Container Styles */
 .left-container {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 10px;
+  align-items: center;
+  gap: 20px;
 }
 
-/* Logo styles (optional, if you want to tweak further) */
 .left-container img {
-  margin: 15px;
+  margin: 20px;
+  width: 170px;
 }
 
-/* Title styles */
 h1 {
   color: #F2B390;
   text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.7);
   margin: 0;
-  padding: 5px 10px;
-  border-radius: 5px;
+  font-size: 30px;
 }
 
-/* Form Styles */
 form {
   display: flex;
   flex-direction: column;
-  align-items: flex-start;
-  gap: 15px;
-  background-color: rgba(255, 255, 255, 0.5);
-  padding: 20px 40px;
-  border-radius: 15px;
-  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
-  width: 40%;
+  align-items: center;
+  gap: 20px;
+  background-color: #e6f0fa98;
+  padding: 30px;
+  border-radius: 12px;
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5);
+  width: 90%;
   max-width: 500px;
   min-width: 300px;
-}
-
-@media (max-width: 500px) {
-  form {
-    width: 80%;
-  }
 }
 
 div {
@@ -75,146 +64,139 @@ div {
 }
 
 label {
-  width: 130px;
+  width: 120px;
   text-align: left;
-  font-size: 18px;
-  font-weight: bold;
-  color: rgba(0, 0, 2, 0.65);
-  text-shadow: 2px 2px 4px rgb(255, 255, 255, 0.99);
+  font-size: 16px;
+  font-weight: 600;
+  color: #004d40;
 }
 
 input {
   flex: 1;
-  padding: 8px;
-  font-size: 15px;
-  border: 1px solid #e3e3e8;
-  border-radius: 5px;
-  min-width: 0;
+  width: 100%;
+  padding: 10px;
+  font-size: 14px;
+  background-color: #ffffff;
+  border: 1px solid #b0bec5;
+  border-radius: 8px;
+  color: #263238;
+  transition: border-color 0.3s ease;
 }
 
 input:focus {
-  border-color: #f0ddbc;
-  outline: 1px solid rgb(1, 68, 140);
-  box-shadow: 0 0 20px rgba(242, 179, 144, 0.5);
+  border: 1px solid #0288d1;
+  outline: none;
+  box-shadow: 0 0 0 3px rgba(2, 136, 209, 0.1);
 }
 
-button {
-  padding: 10px 20px;
-  font-size: 16px;
-  background-color: #F2B390;
-  border: none;
-  color: rgba(0, 0, 2, 0.9);
-  border-radius: 5px;
-  cursor: pointer;
-  margin-left: 140px;
-  transition: all 0.3s ease;
-}
-
-button:hover {
-  background-color: #c06534;
-  color: #ffffff;
-  border-color: #d8642a;
-}
-
-.language-toggle {
-  padding: 3px 12px;
-  font-size: 12px;
-  background-color: rgba(22, 1, 126, 0.1);
-  color: #04458b;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  min-width: 70px;
-  white-space: nowrap;
-  text-align: center;
-}
-
-.logout {
-  padding: 3px 8px;
-  font-size: 12px;
-  background-color: rgba(22, 1, 126, 0.1);
-  color: #04458b;
-  border: none;
-  border-radius: 5px;
-  cursor: pointer;
-  /* Optional: Add min-width for consistency */
-  min-width: 50px;
-  white-space: nowrap;
-  text-align: center;
-}
-
-.language-toggle:hover,
-.logout:hover {
-  background-color: #16017e;
-}
-
-form p {
-  margin: 2px 0;
-  padding: 0;
-  width: 100%;
-  text-align: left;
-  color: #f50505;
-  font-weight: bold;
+input::placeholder {
+  color: #90a4ae;
   font-size: 14px;
-  text-shadow: 2px 2px 4px rgba(0, 0, 0, 0.9);
-  background-color: rgba(255, 255, 255, 0);
-  border-radius: 5px;
-  padding: 5px;
-}
-
-form p.success {
-  color: rgb(1, 140, 120);
-  font-size: 18px;
-  font-weight: bold;
-  text-align: center;
-  text-shadow: 2px 2px 4px rgba(254, 254, 254, 0.99);
-}
-
-form p.error {
-  color: #f50505;
-  text-shadow: 2px 2px 4px rgb(255, 255, 255);
-}
-
-form p.welcome {
-  width: 100%;
-  text-align: center;
-  color: #F2B390;
-  font-weight: bold;
-  font-size: 18px;
-  text-shadow: 2px 2px 4px rgba(0, 0, 10, 0.9);
-  margin: 0px 0px 5px 0px;
 }
 
 .show-password {
-  margin-left: 5px;
-  padding: 3px 8px;
-  font-size: 12px;
-  background-color: #e3e3e800;
-  color: #2907c2;
+  margin-left: 1px;
+  padding: 1px 1px;
+  background: none;
+  border: none;
   cursor: pointer;
+  font-size: 16px;
+  color: #546e7a;
+  transform: translateY(-30%);
 }
 
 .show-password:hover {
   background-color: #d1d1d656;
 }
 
-.result-messages {
-  margin-top: 10px;
+button {
+  padding: 12px 24px;
+  font-size: 16px;
+  font-weight: 600;
+  background-color: #0288d1;
+  border: none;
+  color: #ffffffd7;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.5s ease;
 }
 
-.result-messages p {
-  margin: 5px 0; /* Space between the two lines */
+button:hover {
+  background-color: #026aa7;
+  color: #ffffff;
 }
 
-.success {
-  color: green;
-  line-height: 20px;
-  text-shadow: 2px 2px 4px rgb(254, 254, 254);
+button:focus {
+  outline: 1px solid #0288d1;
+  background-color: #026aa7;
+  color: #ffffff;
 }
 
-.error {
-  color: red;
+.language-toggle,
+.logout {
+  padding: 7px 14px;
+  font-size: 13px;
+  background-color: rgba(22, 1, 126, 0.1);
+  color: #026aa7;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.5s ease;
 }
-.warning {
-  color: orange;
+
+.language-toggle {
+  position: absolute;
+  top: 20px;
+  right: 145px;
+}
+
+.logout {
+  position: absolute;
+  top: 20px;
+  right: 50px;
+}
+
+.language-toggle:hover,
+.logout:hover {
+  background-color: #026aa7;
+}
+
+form p {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+form p.welcome {
+  text-align: center;
+  color: #004d40;
+  font-weight: 600;
+  font-size: 20px;
+}
+
+form p.success {
+  color: #388e3c;
+  font-size: 16px;
+  font-weight: bold;
+  text-shadow: 2px 2px 4px rgba(254, 254, 254);
+}
+
+form p.error {
+  color: #d32f2f;
+  font-weight: bold;
+  text-shadow: 2px 2px 4px rgb(255, 255, 255, 0.5);
+}
+
+form p.warning {
+  color: #f57c00;
+  font-weight: bold;
+  text-shadow: 2px 2px 4px rgb(255, 255, 255, 0.5);
+}
+
+@media (max-width: 500px) {
+  form {
+    width: 90%;
+  }
 }
