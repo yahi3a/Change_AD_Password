@@ -72,7 +72,7 @@ const getCredString = (username, password) =>
 }));
 */
 
-app.post('/api/login', asyncHandler(async (req, res) => {
+/*app.post('/api/login', asyncHandler(async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     console.log('Missing username or password:', { username, password });
@@ -89,6 +89,45 @@ app.post('/api/login', asyncHandler(async (req, res) => {
     res.json({ 
       success: true, 
       username: userData.SamAccountName || username, 
+      displayName: userData.DisplayName || username
+    });
+  } catch (error) {
+    console.error('Login Error Details:', error.message);
+    res.status(401).json({ success: false, message: 'Invalid username or password' });
+  }
+}));
+*/
+
+app.post('/api/login', asyncHandler(async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    console.log('Missing username or password:', { username, password });
+    return res.status(400).json({ success: false, message: 'Username and password required' });
+  }
+
+  // Step 1: Use admin credentials to find the user's full UPN
+  const findUserCommand = `powershell -Command "& {${getCredString(adConfig.username, adConfig.password)} Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName,DisplayName | Select-Object -Property SamAccountName,UserPrincipalName,DisplayName | ConvertTo-Json -Compress}"`;
+
+  try {
+    // Find the user and get their UPN
+    const findStdout = await execPS(findUserCommand);
+    const userData = JSON.parse(findStdout);
+    console.log('Found user data:', userData);
+
+    if (!userData.UserPrincipalName) {
+      throw new Error('User not found in AD');
+    }
+
+    const fullUPN = userData.UserPrincipalName; // e.g., hungnt1@dragonoceandoson.vn
+
+    // Step 2: Validate the user's credentials with their full UPN
+    const authCommand = `powershell -Command "& {${getCredString(fullUPN, password)} Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred}"`;
+    await execPS(authCommand); // This validates the password
+
+    // Step 3: Return the user data
+    res.json({
+      success: true,
+      username: userData.SamAccountName || username,
       displayName: userData.DisplayName || username
     });
   } catch (error) {
