@@ -1,7 +1,7 @@
-@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Montserrat:wght@400;600;700&family=Roboto:wght@400;500;700&display=swap');
 
 .App {
-  font-family: 'Montserrat', sans-serif;
+  font-family: 'Montserrat', 'Roboto', sans-serif; /* Fallback to Roboto */
   min-height: 100vh;
   background-image: url('./assets/background.jpg');
   background-size: cover;
@@ -100,13 +100,20 @@ input::placeholder {
   background: none;
   border: none;
   cursor: pointer;
-  font-size: 16px;
+  font-size: 20px;
   color: #546e7a;
   transform: translateY(-30%);
 }
 
 .show-password:hover {
   background-color: #d1d1d656;
+  color: #004d40;
+}
+
+.show-password:focus {
+  background-color: #d1d1d656;
+  color: #004d40;
+  outline: 1px solid #004d40;
 }
 
 button {
@@ -132,8 +139,10 @@ button:focus {
   color: #ffffff;
 }
 
-.language-toggle,
-.logout {
+.language-toggle {
+  position: absolute;
+  top: 20px;
+  right: 145px;
   padding: 7px 14px;
   font-size: 13px;
   background-color: rgba(22, 1, 126, 0.1);
@@ -144,16 +153,18 @@ button:focus {
   transition: background-color 0.5s ease;
 }
 
-.language-toggle {
-  position: absolute;
-  top: 20px;
-  right: 145px;
-}
-
 .logout {
   position: absolute;
   top: 20px;
   right: 50px;
+  padding: 7px 14px;
+  font-size: 13px;
+  background-color: rgba(22, 1, 126, 0.1);
+  color: #026aa7;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.5s ease;
 }
 
 .language-toggle:hover,
@@ -174,6 +185,7 @@ form p.welcome {
   color: #004d40;
   font-weight: 600;
   font-size: 20px;
+  font-family: 'Montserrat', 'Roboto', sans-serif; /* Explicitly apply here too */
 }
 
 form p.success {

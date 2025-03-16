@@ -1,8 +1,7 @@
+import 'bootstrap-icons/font/bootstrap-icons.css';
 import React, { useState, useEffect } from 'react';
 import axios from 'axios';
-import './App.css';
-
-interface Translation {
+import './App.css'; interface Translation {
   title: string;
   loginUsernameLabel: string;
   loginPasswordLabel: string;
@@ -37,6 +36,7 @@ function App() {
   const [loginMessage, setLoginMessage] = useState<React.ReactNode>('');
   const [showLoginPassword, setShowLoginPassword] = useState<boolean>(false);
   const [username, setUsername] = useState<string>('');
+  const [displayName, setDisplayName] = useState<string>(''); // New state for display name
   const [password, setPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
   const [message, setMessage] = useState<React.ReactNode>('');
@@ -44,16 +44,14 @@ function App() {
   const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
   const [language, setLanguage] = useState<'en' | 'vi'>('en');
   const [passwordChanged, setPasswordChanged] = useState<boolean>(false);
-  const [isProcessing, setIsProcessing] = useState<boolean>(false);
-
-  const translations: Translations = {
+  const [isProcessing, setIsProcessing] = useState<boolean>(false); const translations: Translations = {
     en: {
       title: 'GELEXIMCO - ACCOUNT MANAGEMENT',
       loginUsernameLabel: 'Username: ',
       loginPasswordLabel: 'Password: ',
       loginButton: 'Login',
       loginError: 'Invalid username or password.',
-      welcome: 'Welcome, ',
+      welcome: 'Welcome... Mr/Mrs ',
       usernameLabel: 'Username: ',
       newPasswordLabel: 'New Password: ',
       confirmLabel: 'Confirm: ',
@@ -103,9 +101,11 @@ function App() {
         username: loginUsername,
         password: loginPassword,
       });
+      console.log('Login response:', response.data); // Add this line
       if (response.data.success) {
         setLoggedIn(true);
         setUsername(response.data.username);
+        setDisplayName(response.data.displayName); // Store display name for welcome message
         setLoginMessage('');
         setLoginUsername('');
         setLoginPassword('');
@@ -177,7 +177,7 @@ function App() {
           setMessage(
             <p className="success">
               {translations[language].successMessage}
-              {username}!
+              {displayName}! {/* Use displayName here too */}
             </p>
           );
           setPasswordChanged(true);
@@ -220,6 +220,9 @@ function App() {
       .then(() => {
         setLoggedIn(false);
         setUsername('');
+        setDisplayName(''); // Clear display name on logout
+        setPassword('');
+        setConfirmPassword('');
         setMessage('');
         setPasswordChanged(false);
       })
@@ -271,7 +274,7 @@ function App() {
                 onClick={() => setShowLoginPassword(!showLoginPassword)}
                 disabled={isProcessing}
               >
-                {showLoginPassword ? '👁️‍🗨️' : '👁️'}
+                <i className={showLoginPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
               </button>
             </div>
             <button type="submit" disabled={isProcessing}>
@@ -283,7 +286,7 @@ function App() {
           <form onSubmit={handleSubmit}>
             <p className="welcome">
               {translations[language].welcome}
-              {username}!
+              {displayName}! {/* Changed from username to displayName */}
             </p>
             {!passwordChanged && (
               <>
@@ -311,8 +314,8 @@ function App() {
                     className="show-password"
                     onClick={() => setShowNewPassword(!showNewPassword)}
                     disabled={isProcessing}
-                  >
-                    {showNewPassword ? '👁️‍🗨️' : '👁️'}
+                  >                    
+                    <i className={showNewPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
                   </button>
                 </div>
                 <div>
@@ -329,8 +332,8 @@ function App() {
                     className="show-password"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                     disabled={isProcessing}
-                  >
-                    {showConfirmPassword ? '👁️‍🗨️' : '👁️'}
+                  >                    
+                    <i className={showConfirmPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
                   </button>
                 </div>
                 <button type="submit" disabled={isProcessing}>
@@ -363,6 +366,7 @@ function App() {
         </button>
       )}
     </div>
+
   );
 }
 

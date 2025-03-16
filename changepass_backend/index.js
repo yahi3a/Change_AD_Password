@@ -10,6 +10,10 @@ require('dotenv').config();
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
+app.use((req, res, next) => {
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
+  next();
+});
 
 const adConfig = {
   url: process.env.AD_URL,
@@ -22,7 +26,7 @@ const PENDING_FILE = path.join(__dirname, 'pending-azure-changes.json');
 const PORT = process.env.PORT || 3001;
 const RETRY_INTERVAL = 300000;
 
-const asyncHandler = fn => (req, res, next) => 
+const asyncHandler = fn => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(error => {
     console.error('Error:', error);
     res.status(500).json({ success: false, message: error.message });
@@ -44,18 +48,19 @@ const initializePendingFile = async () => {
 
 const execPS = async (command) => {
   try {
-    const { stdout, stderr } = await exec(command);
+    const { stdout, stderr } = await exec(command, { encoding: 'utf8' });
     if (stderr && !stdout) throw new Error(stderr);
+    console.log('Raw stdout (before parsing):', stdout); // Debug raw output
     return stdout;
   } catch (error) {
     throw new Error(error.message);
   }
 };
 
-const getCredString = (username, password) => 
+const getCredString = (username, password) =>
   `$cred = New-Object System.Management.Automation.PSCredential('${username}', (ConvertTo-SecureString '${password}' -AsPlainText -Force));`;
 
-app.post('/api/login', asyncHandler(async (req, res) => {
+/*app.post('/api/login', asyncHandler(async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
     return res.status(400).json({ success: false, message: 'Username and password required' });
@@ -64,6 +69,32 @@ app.post('/api/login', asyncHandler(async (req, res) => {
   const command = `powershell -Command "${getCredString(adUsername, password)} Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred"`;
   await execPS(command);
   res.json({ success: true, username: username.split('@')[0] });
+}));
+*/
+
+app.post('/api/login', asyncHandler(async (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) {
+    console.log('Missing username or password:', { username, password });
+    return res.status(400).json({ success: false, message: 'Username and password required' });
+  }
+  const adUsername = `${username}@dragondoson.vn`;
+  const command = `powershell -Command "& {[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${getCredString(adUsername, password)} Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -Properties DisplayName | Select-Object -Property SamAccountName,DisplayName | ConvertTo-Json -Compress | Out-String}"`;
+  try {
+    const stdout = await execPS(command);
+    console.log('Raw stdout from PowerShell:', stdout); // Log raw output
+    const userData = JSON.parse(stdout); // Parse the JSON output from PowerShell
+    console.log('Parsed user data:', userData); // Log parsed data
+
+    res.json({ 
+      success: true, 
+      username: userData.SamAccountName || username, 
+      displayName: userData.DisplayName || username
+    });
+  } catch (error) {
+    console.error('Login Error Details:', error.message);
+    res.status(401).json({ success: false, message: 'Invalid username or password' });
+  }
 }));
 
 app.post('/api/logout', (req, res) => {
@@ -92,9 +123,9 @@ app.post('/api/change-azure-password', asyncHandler(async (req, res) => {
     res.json({ success: true, message: 'Azure AD password changed successfully' });
   } catch (error) {
     await storePendingChange(username, newPassword);
-    res.status(500).json({ 
-      success: false, 
-      message: `Azure AD password change failed. Will retry later. Details: ${error.message}` 
+    res.status(500).json({
+      success: false,
+      message: `Azure AD password change failed. Will retry later. Details: ${error.message}`
     });
   }
 }));
