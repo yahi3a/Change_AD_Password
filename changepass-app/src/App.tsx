@@ -51,7 +51,7 @@ function App() {
       loginPasswordLabel: 'Password: ',
       loginButton: 'Login',
       loginError: 'Invalid username or password.',
-      welcome: 'Welcome... Mr/Mrs ',
+      welcome: 'Welcome... ',
       usernameLabel: 'Username: ',
       newPasswordLabel: 'New Password: ',
       confirmLabel: 'Confirm: ',
