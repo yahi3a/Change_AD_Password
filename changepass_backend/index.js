@@ -60,44 +60,6 @@ const execPS = async (command) => {
 const getCredString = (username, password) =>
   `$cred = New-Object System.Management.Automation.PSCredential('${username}', (ConvertTo-SecureString '${password}' -AsPlainText -Force));`;
 
-/*app.post('/api/login', asyncHandler(async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ success: false, message: 'Username and password required' });
-  }
-  const adUsername = `${username}@dragondoson.vn`;
-  const command = `powershell -Command "${getCredString(adUsername, password)} Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred"`;
-  await execPS(command);
-  res.json({ success: true, username: username.split('@')[0] });
-}));
-*/
-
-/*app.post('/api/login', asyncHandler(async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    console.log('Missing username or password:', { username, password });
-    return res.status(400).json({ success: false, message: 'Username and password required' });
-  }
-  const adUsername = `${username}@dragondoson.vn`;
-  const command = `powershell -Command "& {[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${getCredString(adUsername, password)} Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -Properties DisplayName | Select-Object -Property SamAccountName,DisplayName | ConvertTo-Json -Compress | Out-String}"`;
-  try {
-    const stdout = await execPS(command);
-    console.log('Raw stdout from PowerShell:', stdout); // Log raw output
-    const userData = JSON.parse(stdout); // Parse the JSON output from PowerShell
-    console.log('Parsed user data:', userData); // Log parsed data
-
-    res.json({ 
-      success: true, 
-      username: userData.SamAccountName || username, 
-      displayName: userData.DisplayName || username
-    });
-  } catch (error) {
-    console.error('Login Error Details:', error.message);
-    res.status(401).json({ success: false, message: 'Invalid username or password' });
-  }
-}));
-*/
-
 app.post('/api/login', asyncHandler(async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
@@ -106,11 +68,12 @@ app.post('/api/login', asyncHandler(async (req, res) => {
   }
 
   // Step 1: Use admin credentials to find the user's full UPN
-  const findUserCommand = `powershell -Command "& {${getCredString(adConfig.username, adConfig.password)} Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName,DisplayName | Select-Object -Property SamAccountName,UserPrincipalName,DisplayName | ConvertTo-Json -Compress}"`;
+  const findUserCommand = `powershell -Command "& {[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${getCredString(adConfig.username, adConfig.password)} Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName,DisplayName | Select-Object -Property SamAccountName,UserPrincipalName,DisplayName | ConvertTo-Json -Compress | Out-String}"`;
 
   try {
     // Find the user and get their UPN
     const findStdout = await execPS(findUserCommand);
+    console.log('Raw find stdout:', findStdout); // Debug raw output
     const userData = JSON.parse(findStdout);
     console.log('Found user data:', userData);
 
@@ -121,7 +84,7 @@ app.post('/api/login', asyncHandler(async (req, res) => {
     const fullUPN = userData.UserPrincipalName; // e.g., hungnt1@dragonoceandoson.vn
 
     // Step 2: Validate the user's credentials with their full UPN
-    const authCommand = `powershell -Command "& {${getCredString(fullUPN, password)} Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred}"`;
+    const authCommand = `powershell -Command "& {[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${getCredString(fullUPN, password)} Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred | Out-String}"`;
     await execPS(authCommand); // This validates the password
 
     // Step 3: Return the user data
@@ -166,6 +129,74 @@ app.post('/api/change-azure-password', asyncHandler(async (req, res) => {
       success: false,
       message: `Azure AD password change failed. Will retry later. Details: ${error.message}`
     });
+  }
+}));
+
+app.post('/api/reset-password', asyncHandler(async (req, res) => {
+  const { username, secretCode } = req.body;
+  if (!username || !secretCode) {
+    console.log('Missing username or secret code:', { username, secretCode });
+    return res.status(400).json({ success: false, message: 'Username and secret code required' });
+  }
+
+  // Read and update the secret code file
+  const filePath = path.join(__dirname, '../changepass-app/public/reset_password.code');
+  try {
+    const fileContent = await fs.readFile(filePath, 'utf8');
+    const lines = fileContent.trim().split('\n');
+    const currentTime = Date.now();
+    const validLines = [];
+
+    let codeValid = false;
+    let userData = null;
+
+    // Parse and filter lines
+    for (const line of lines) {
+      const [storedCode, storedUsername, storedTime] = line.trim().split('||').map(part => part.trim());
+      if (!storedCode || !storedUsername || !storedTime) continue; // Skip malformed lines
+
+      const codeTime = parseInt(storedTime, 10);
+      const timeDifference = (currentTime - codeTime) / 1000; // Convert to seconds
+
+      if (timeDifference <= 1200) { // 20 minutes = 1200 seconds
+        validLines.push(line); // Keep valid lines
+        if (
+          storedCode === secretCode &&
+          storedUsername === username
+        ) {
+          codeValid = true;
+          // Fetch user data with admin credentials
+          const findUserCommand = `powershell -Command "& {[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${getCredString(adConfig.username, adConfig.password)} Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName,DisplayName | Select-Object -Property SamAccountName,UserPrincipalName,DisplayName | ConvertTo-Json -Compress | Out-String}"`;
+          const findStdout = await execPS(findUserCommand);
+          userData = JSON.parse(findStdout);
+          console.log('Found user data for reset:', userData);
+        }
+      } else {
+        console.log('Removed expired entry:', line);
+      }
+    }
+
+    // Write back only valid lines
+    await fs.writeFile(filePath, validLines.join('\n') + (validLines.length > 0 ? '\n' : ''), 'utf8');
+    console.log('Updated reset_password.code with valid entries:', validLines);
+
+    if (!codeValid) {
+      console.log('Validation failed:', { secretCode, username, validLines });
+      return res.status(401).json({ success: false, message: 'Invalid or expired secret code' });
+    }
+
+    if (!userData || !userData.UserPrincipalName) {
+      throw new Error('User not found in AD');
+    }
+
+    res.json({
+      success: true,
+      username: userData.SamAccountName || username,
+      displayName: userData.DisplayName || username
+    });
+  } catch (error) {
+    console.error('Reset Password Error:', error.message);
+    res.status(500).json({ success: false, message: 'Reset failed. Contact IT admin.' });
   }
 }));
 

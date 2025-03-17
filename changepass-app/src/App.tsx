@@ -22,6 +22,12 @@ import './App.css'; interface Translation {
   confirmPlaceholder: string;
   passwordRequirement: string;
   azurePendingWarning: string; // New translation for Azure AD retry
+  forgotPassword: string;
+  resetInstructions: string;
+  secretCodeLabel: string;
+  secretCodePlaceholder: string;
+  submitCodeButton: string;
+  invalidCodeError: string;
 }
 
 interface Translations {
@@ -44,7 +50,11 @@ function App() {
   const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
   const [language, setLanguage] = useState<'en' | 'vi'>('en');
   const [passwordChanged, setPasswordChanged] = useState<boolean>(false);
-  const [isProcessing, setIsProcessing] = useState<boolean>(false); const translations: Translations = {
+  const [isProcessing, setIsProcessing] = useState<boolean>(false);
+  const [showResetPopup, setShowResetPopup] = useState<boolean>(false);
+  const [secretCode, setSecretCode] = useState<string>('');
+  const [resetMessage, setResetMessage] = useState<React.ReactNode>('');
+  const translations: Translations = {
     en: {
       title: 'GELEXIMCO - ACCOUNT MANAGEMENT',
       loginUsernameLabel: 'Username: ',
@@ -60,12 +70,18 @@ function App() {
       matchError: 'Passwords do not match.',
       fieldsError: 'Please fill in all fields.',
       logoutButton: 'Logout',
-      loginPlaceholder: 'Username ̶ ̶@̶d̶r̶a̶g̶o̶n̶d̶o̶s̶o̶n̶.̶v̶n̶',
+      loginPlaceholder: 'Email_account ̶ ̶@̶d̶o̶_̶n̶o̶t̶_̶n̶e̶e̶d̶_̶t̶o̶_̶i̶n̶p̶u̶t̶.̶p̶a̶r̶t̶',
       passwordPlaceholder: 'Enter current password',
       newPasswordPlaceholder: 'Enter new password',
       confirmPlaceholder: 'Re-enter new password',
       passwordRequirement: 'The password must be at least 11 characters long and contain at least three of these four elements: an uppercase letter, a lowercase letter, a number, and a special character. It must also NOT include your USERNAME.',
       azurePendingWarning: 'Windows login password changed, but Email/Office 365 account password might take 24h to sync. Please try again later.',
+      forgotPassword: 'Forgot password?',
+      resetInstructions: 'Please contact the IT admin to receive a secret code to reset your password. Remember the code is only valid for 20 minutes.',
+      secretCodeLabel: 'Secret Code: ',
+      secretCodePlaceholder: 'Enter the secret code',
+      submitCodeButton: 'Submit Code',
+      invalidCodeError: 'The informations were invalid input or expired secret code. Please try again with the exact username and secret code or contact IT admin for helping.',
     },
     vi: {
       title: 'GELEXIMCO - QUẢN LÝ TÀI KHOẢN',
@@ -82,12 +98,18 @@ function App() {
       matchError: 'Mật khẩu không khớp.',
       fieldsError: 'Vui lòng điền đầy đủ các mục.',
       logoutButton: 'Đăng xuất',
-      loginPlaceholder: 'Tên người dùng ̶ ̶@̶d̶r̶a̶g̶o̶n̶d̶o̶s̶o̶n̶.̶v̶n̶',
+      loginPlaceholder: 'Tài khoản Email ̶ ̶@̶p̶h̶ầ̶̶n̶ ̶k̶h̶ô̶n̶g̶ ̶c̶ầ̶̶n̶.̶n̶h̶ậ̶̶p̶',
       passwordPlaceholder: 'Nhập mật khẩu hiện tại',
       newPasswordPlaceholder: 'Nhập mật khẩu mới',
       confirmPlaceholder: 'Nhập lại mật khẩu mới',
       passwordRequirement: 'Mật khẩu dài tối thiểu 11 ký tự và chứa ít nhất ba trong bốn yếu tố sau: chữ viết hoa, chữ viết thường, số và ký tự đặc biệt. Ngoài ra, KHÔNG ĐƯỢC bao gồm TÊN NGƯỜI DÙNG của bạn.',
       azurePendingWarning: 'Mật khẩu đăng nhập Windows đã được thay đổi, nhưng Mật khẩu tài khoản Email & Office 365 có thể mất tới 24 giờ để cập nhật. Vui lòng thử lại sau.',
+      forgotPassword: 'Bạn quên mật khẩu?',
+      resetInstructions: 'Vui lòng liên hệ quản trị viên hệ thống - BCNTT để nhận mã bí mật nhằm đặt lại mật khẩu của bạn. Mã bí mật chỉ có hiệu lực trong 20 phút.',
+      secretCodeLabel: 'Mã bí mật: ',
+      secretCodePlaceholder: 'Nhập mã bí mật',
+      submitCodeButton: 'Xác nhận mã',
+      invalidCodeError: 'Thông tin bạn nhập không hợp lệ hoặc đã hết hạn. Vui lòng thử lại với tên đăng nhập và mã bí mật chính xác hoặc liên hệ quản trị viên hệ thống.',
     },
   };
 
@@ -233,6 +255,34 @@ function App() {
       });
   };
 
+  const handleResetPassword = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    setIsProcessing(true);
+    try {
+      const response = await axios.post(`${API_URL}/reset-password`, {
+        username: loginUsername,
+        secretCode,
+      });
+      if (response.data.success) {
+        setResetMessage('');
+        setShowResetPopup(false);
+        setSecretCode('');
+        setUsername(response.data.username);
+        setDisplayName(response.data.displayName || response.data.username);
+        setLoggedIn(true); // Skip login, go to change password
+      } else {
+        setResetMessage(<p className="error">{translations[language].invalidCodeError}</p>);
+        setTimeout(() => setResetMessage(''), 2000);
+      }
+    } catch (error) {
+      console.error('Reset Password Error:', error);
+      setResetMessage(<p className="error">{translations[language].invalidCodeError}</p>);
+      setTimeout(() => setResetMessage(''), 2000);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   useEffect(() => {
     if (passwordChanged) {
       const timer = setTimeout(() => {
@@ -244,44 +294,99 @@ function App() {
 
   return (
     <div className={`App ${isProcessing ? 'processing' : ''}`}>
-      <div className="left-container">
+      <div className="center-container">
         <img src="/logo.png" alt="DragonDoson Logo" style={{ width: '170px' }} />
         <h1>{translations[language].title}</h1>
         {!loggedIn ? (
-          <form onSubmit={handleLogin}>
-            <div>
-              <label>{translations[language].loginUsernameLabel}</label>
-              <input
-                type="text"
-                value={loginUsername}
-                onChange={(e) => setLoginUsername(e.target.value)}
-                placeholder={translations[language].loginPlaceholder}
-                disabled={isProcessing}
-              />
-            </div>
-            <div>
-              <label>{translations[language].loginPasswordLabel}</label>
-              <input
-                type={showLoginPassword ? 'text' : 'password'}
-                value={loginPassword}
-                onChange={(e) => setLoginPassword(e.target.value)}
-                placeholder={translations[language].passwordPlaceholder}
-                disabled={isProcessing}
-              />
+          showResetPopup ? (
+            <div className="reset-popup">
               <button
                 type="button"
-                className="show-password"
-                onClick={() => setShowLoginPassword(!showLoginPassword)}
+                className="close-button"
+                onClick={() => {
+                  setShowResetPopup(false);
+                  setSecretCode('');
+                  setResetMessage('');
+                }}
                 disabled={isProcessing}
               >
-                <i className={showLoginPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
+                <i className="bi bi-x"></i>
               </button>
+              <form onSubmit={handleResetPassword}>
+                <p>{translations[language].resetInstructions}</p>
+                <div>
+                  <label>{translations[language].secretCodeLabel}</label>
+                  <input
+                    type="text"
+                    value={secretCode}
+                    onChange={(e) => setSecretCode(e.target.value)}
+                    placeholder={translations[language].secretCodePlaceholder}
+                    disabled={isProcessing}
+                  />
+                </div>
+                <button type="submit" disabled={isProcessing}>
+                  {translations[language].submitCodeButton}
+                </button>
+                <p>{resetMessage}</p>
+              </form>
             </div>
-            <button type="submit" disabled={isProcessing}>
-              {translations[language].loginButton}
-            </button>
-            <p>{loginMessage}</p>
-          </form>
+          ) : (
+            <form onSubmit={handleLogin}>
+              <div>
+                <label>{translations[language].loginUsernameLabel}</label>
+                <input
+                  type="text"
+                  value={loginUsername}
+                  onChange={(e) => setLoginUsername(e.target.value)}
+                  placeholder={translations[language].loginPlaceholder}
+                  disabled={isProcessing}
+                />
+              </div>
+              <div>
+                <label>{translations[language].loginPasswordLabel}</label>
+                <input
+                  type={showLoginPassword ? 'text' : 'password'}
+                  value={loginPassword}
+                  onChange={(e) => setLoginPassword(e.target.value)}
+                  placeholder={translations[language].passwordPlaceholder}
+                  disabled={isProcessing}
+                />
+                <button
+                  type="button"
+                  className="show-password"
+                  onClick={() => setShowLoginPassword(!showLoginPassword)}
+                  disabled={isProcessing}
+                >
+                  <i className={showLoginPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
+                </button>
+              </div>
+              <a
+                href="#"
+                className="forgot-password"
+                onClick={(e) => {
+                  e.preventDefault();
+                  if (!loginUsername.trim()) {
+                    setLoginMessage(
+                      <p className="error">
+                        {language === 'en'
+                          ? 'You need to input the username to use this function.'
+                          : 'Bạn cần nhập tên đăng nhập để sử dụng chức năng này.'}
+                      </p>
+                    );
+                    setTimeout(() => setLoginMessage(''), 2000);
+                  } else {
+                    setShowResetPopup(true);
+                  }
+                }}
+              >
+                {translations[language].forgotPassword}
+              </a>
+              <button type="submit" disabled={isProcessing}>
+                {translations[language].loginButton}
+              </button>
+              <p>{loginMessage}</p>
+            </form>
+          )
         ) : (
           <form onSubmit={handleSubmit}>
             <p className="welcome">
@@ -314,7 +419,7 @@ function App() {
                     className="show-password"
                     onClick={() => setShowNewPassword(!showNewPassword)}
                     disabled={isProcessing}
-                  >                    
+                  >
                     <i className={showNewPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
                   </button>
                 </div>
@@ -332,7 +437,7 @@ function App() {
                     className="show-password"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                     disabled={isProcessing}
-                  >                    
+                  >
                     <i className={showConfirmPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
                   </button>
                 </div>
