@@ -230,33 +230,31 @@ form p.warning {
   }
 }
 
-
-
 .reset-popup {
   position: fixed;
-  top: 41%;
+  top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  color: #004d40;
-  background-color: #fcfcfc00;
+  background-color: rgba(252, 252, 252, 0.9); /* Opaque white */
   padding: 20px;
   border-radius: 12px;
-  box-shadow: 0 6px 12px rgba(255, 255, 255, 0);
+  box-shadow: 0 6px 12px rgba(255, 0, 0, 0);
   width: 90%;
   max-width: 500px;
   z-index: 1000;
 }
-
 .reset-popup form {
   display: flex;
   flex-direction: column;
   align-items: center;
   gap: 15px;
-  background-color: #e6f0fa98;
+  background-color: rgba(253, 253, 253, 0);
+  box-shadow: none;
 }
 
 .reset-popup p {
   margin: 0;
+  color: #004d40;
   font-size: 15px;
   font-weight: 600;
   text-align: center;
@@ -269,9 +267,9 @@ form p.warning {
 
 .reset-popup .close-button {
   position: absolute;
-  top: 30px;
+  top: 11px;
   /*left: 390px;*/
-  right: 30px;
+  right: 11px;
   background: none;
   border: none;
   color: #000000; /* Red color */
@@ -294,4 +292,12 @@ form p.warning {
 .reset-popup .close-button:disabled {
   color: #44444480; /* Faded dark when disabled */
   cursor: not-allowed;
+}
+
+.username-display {
+  flex: 1;
+  padding: 10px;
+  font-size: 16px;
+  font-weight: 600;
+  color: #004d40;
 }

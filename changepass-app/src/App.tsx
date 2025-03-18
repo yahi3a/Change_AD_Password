@@ -22,7 +22,7 @@ import './App.css'; interface Translation {
   newPasswordPlaceholder: string;
   confirmPlaceholder: string;
   passwordRequirement: string;
-  azurePendingWarning: string; // New translation for Azure AD retry
+  azurePendingWarning: string;
   forgotPassword: string;
   resetInstructions: string;
   secretCodeLabel: string;
@@ -43,7 +43,7 @@ function App() {
   const [loginMessage, setLoginMessage] = useState<React.ReactNode>('');
   const [showLoginPassword, setShowLoginPassword] = useState<boolean>(false);
   const [username, setUsername] = useState<string>('');
-  const [displayName, setDisplayName] = useState<string>(''); // New state for display name
+  const [displayName, setDisplayName] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
   const [message, setMessage] = useState<React.ReactNode>('');
@@ -125,11 +125,12 @@ function App() {
         username: loginUsername,
         password: loginPassword,
       });
-      console.log('Login response:', response.data); // Add this line
+      console.log('Login response from backend:', response.data);
       if (response.data.success) {
         setLoggedIn(true);
         setUsername(response.data.username);
-        setDisplayName(response.data.displayName); // Store display name for welcome message
+        setDisplayName(response.data.displayName || response.data.username);
+        console.log('Set displayName to:', response.data.displayName);
         setLoginMessage('');
         setLoginUsername('');
         setLoginPassword('');
@@ -148,19 +149,16 @@ function App() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const passwordRegex = /^(?!.*username$)(?=(?:[^A-Z]*[A-Z]){1,})(?=(?:[^a-z]*[a-z]){1,})(?=(?:[^0-9]*[0-9]){1,})(?=(?:[^@#$!%*?&]*[@#$!%*?&]){1,}).{11,}$/;
-
     const trimmedPassword = password.trim();
     const trimmedConfirmPassword = confirmPassword.trim();
 
-    console.log('Form submitted with:');
-    console.log('username:', username);
-    console.log('password:', trimmedPassword);
-    console.log('confirmPassword:', trimmedConfirmPassword);
-
     if (username && trimmedPassword && trimmedConfirmPassword) {
-      if (!passwordRegex.test(trimmedPassword)) {
-        console.log('Password does not meet regex requirements');
+      // Dynamically create regex with username
+      const PASSWORD_REGEX = new RegExp(
+        `^(?!.*${username}$)(?=(?:[^A-Z]*[A-Z]){1,})(?=(?:[^a-z]*[a-z]){1,})(?=(?:[^0-9]*[0-9]){1,})(?=(?:[^@#$!%*?&]*[@#$!%*?&]){1,}).{11,}$`
+      );
+
+      if (!PASSWORD_REGEX.test(trimmedPassword)) {
         setMessage(<p className="error">{translations[language].passwordRequirement}</p>);
         setTimeout(() => {
           setMessage('');
@@ -171,7 +169,6 @@ function App() {
       }
 
       if (trimmedPassword !== trimmedConfirmPassword) {
-        console.log('Password mismatch detected:', trimmedPassword, 'vs', trimmedConfirmPassword);
         setMessage(<p className="error">{translations[language].matchError}</p>);
         setTimeout(() => {
           setMessage('');
@@ -181,7 +178,6 @@ function App() {
         return;
       }
 
-      console.log('Passwords match, proceeding with API calls');
       setIsProcessing(true);
       try {
         const adResponse = await axios.post(`${API_URL}/change-ad-password`, {
@@ -201,7 +197,7 @@ function App() {
           setMessage(
             <p className="success">
               {translations[language].successMessage}
-              {displayName}! {/* Use displayName here too */}
+              {displayName}!
             </p>
           );
           setPasswordChanged(true);
@@ -228,7 +224,6 @@ function App() {
         setIsProcessing(false);
       }
     } else {
-      console.log('Missing required fields');
       setMessage(<p className="error">{translations[language].fieldsError}</p>);
       setTimeout(() => {
         setMessage('');
@@ -244,9 +239,7 @@ function App() {
       .then(() => {
         setLoggedIn(false);
         setUsername('');
-        setDisplayName(''); // Clear display name on logout
-        setPassword('');
-        setConfirmPassword('');
+        setDisplayName('');
         setMessage('');
         setPasswordChanged(false);
       })
@@ -267,7 +260,7 @@ function App() {
         secretCode,
       });
       console.log('Reset response:', response.data);
-  
+
       if (response.data.success) {
         console.log('Reset successful, transitioning to password change');
         setResetMessage('');
@@ -337,9 +330,7 @@ function App() {
                 <button type="submit" disabled={isProcessing}>
                   {translations[language].submitCodeButton}
                 </button>
-                {resetMessage && <p className="error">{resetMessage}</p>}
-
-
+                <p>{resetMessage}</p>
               </form>
             </div>
           ) : (
@@ -377,18 +368,7 @@ function App() {
                 className="forgot-password"
                 onClick={(e) => {
                   e.preventDefault();
-                  if (!loginUsername.trim()) {
-                    setLoginMessage(
-                      <p className="error">
-                        {language === 'en'
-                          ? 'You need to input the username to use this function.'
-                          : 'Bạn cần nhập tên đăng nhập để sử dụng chức năng này.'}
-                      </p>
-                    );
-                    setTimeout(() => setLoginMessage(''), 2000);
-                  } else {
-                    setShowResetPopup(true);
-                  }
+                  setShowResetPopup(true);
                 }}
               >
                 {translations[language].forgotPassword}
@@ -403,19 +383,13 @@ function App() {
           <form onSubmit={handleSubmit}>
             <p className="welcome">
               {translations[language].welcome}
-              {displayName}! {/* Changed from username to displayName */}
+              {displayName}!
             </p>
             {!passwordChanged && (
               <>
                 <div>
                   <label>{translations[language].usernameLabel}</label>
-                  <input
-                    type="text"
-                    value={username}
-                    onChange={(e) => setUsername(e.target.value)}
-                    placeholder={translations[language].loginPlaceholder}
-                    disabled
-                  />
+                  <span className="username-display">{username}</span> {/* Changed from input to span */}
                 </div>
                 <div>
                   <label>{translations[language].newPasswordLabel}</label>
@@ -431,6 +405,7 @@ function App() {
                     className="show-password"
                     onClick={() => setShowNewPassword(!showNewPassword)}
                     disabled={isProcessing}
+                    aria-label={showNewPassword ? 'Hide password' : 'Show password'}
                   >
                     <i className={showNewPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
                   </button>
@@ -449,6 +424,7 @@ function App() {
                     className="show-password"
                     onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                     disabled={isProcessing}
+                    aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
                   >
                     <i className={showConfirmPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
                   </button>
@@ -483,7 +459,6 @@ function App() {
         </button>
       )}
     </div>
-
   );
 }
 
