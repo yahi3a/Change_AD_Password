@@ -1,6 +1,7 @@
 import 'bootstrap-icons/font/bootstrap-icons.css';
 import React, { useState, useEffect } from 'react';
-import axios from 'axios';
+//import axios from 'axios';
+import axios, { AxiosError } from 'axios'; // Updated import
 import './App.css'; interface Translation {
   title: string;
   loginUsernameLabel: string;
@@ -53,7 +54,8 @@ function App() {
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [showResetPopup, setShowResetPopup] = useState<boolean>(false);
   const [secretCode, setSecretCode] = useState<string>('');
-  const [resetMessage, setResetMessage] = useState<React.ReactNode>('');
+  //const [resetMessage, setResetMessage] = useState<React.ReactNode>('');
+  const [resetMessage, setResetMessage] = useState<string>('');
   const translations: Translations = {
     en: {
       title: 'GELEXIMCO - ACCOUNT MANAGEMENT',
@@ -259,24 +261,32 @@ function App() {
     event.preventDefault();
     setIsProcessing(true);
     try {
+      console.log('Attempting reset with:', { username: loginUsername, secretCode });
       const response = await axios.post(`${API_URL}/reset-password`, {
         username: loginUsername,
         secretCode,
       });
+      console.log('Reset response:', response.data);
+  
       if (response.data.success) {
+        console.log('Reset successful, transitioning to password change');
         setResetMessage('');
         setShowResetPopup(false);
         setSecretCode('');
         setUsername(response.data.username);
         setDisplayName(response.data.displayName || response.data.username);
-        setLoggedIn(true); // Skip login, go to change password
+        setLoggedIn(true);
+        console.log('State after success:', { loggedIn: true, showResetPopup: false });
       } else {
-        setResetMessage(<p className="error">{translations[language].invalidCodeError}</p>);
+        console.log('Reset failed, staying on popup with message:', response.data.message);
+        setResetMessage(translations[language].invalidCodeError); // Plain string
         setTimeout(() => setResetMessage(''), 2000);
       }
-    } catch (error) {
-      console.error('Reset Password Error:', error);
-      setResetMessage(<p className="error">{translations[language].invalidCodeError}</p>);
+    } catch (error: unknown) { // Use 'unknown' as the catch type
+      const axiosError = error as AxiosError; // Type assertion
+      console.error('Reset Password Error:', axiosError.response ? axiosError.response.data : axiosError.message);
+      console.log('Reset failed due to error, staying on popup');
+      setResetMessage(translations[language].invalidCodeError); // Plain string
       setTimeout(() => setResetMessage(''), 2000);
     } finally {
       setIsProcessing(false);
@@ -327,7 +337,9 @@ function App() {
                 <button type="submit" disabled={isProcessing}>
                   {translations[language].submitCodeButton}
                 </button>
-                <p>{resetMessage}</p>
+                {resetMessage && <p className="error">{resetMessage}</p>}
+
+
               </form>
             </div>
           ) : (
