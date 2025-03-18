@@ -1,8 +1,9 @@
 import 'bootstrap-icons/font/bootstrap-icons.css';
 import React, { useState, useEffect } from 'react';
-//import axios from 'axios';
-import axios, { AxiosError } from 'axios'; // Updated import
-import './App.css'; interface Translation {
+import axios, { AxiosError } from 'axios';
+import './App.css';
+
+interface Translation {
   title: string;
   loginUsernameLabel: string;
   loginPasswordLabel: string;
@@ -36,17 +37,23 @@ interface Translations {
   vi: Translation;
 }
 
+// Define the expected shape of the error response from the backend
+interface ErrorResponse {
+  success: boolean;
+  message?: string;
+}
+
 function App() {
   const [loginUsername, setLoginUsername] = useState<string>('');
   const [loginPassword, setLoginPassword] = useState<string>('');
   const [loggedIn, setLoggedIn] = useState<boolean>(false);
-  const [loginMessage, setLoginMessage] = useState<React.ReactNode>('');
+  const [loginMessage, setLoginMessage] = useState<string>(''); // Changed to string for simplicity
   const [showLoginPassword, setShowLoginPassword] = useState<boolean>(false);
   const [username, setUsername] = useState<string>('');
   const [displayName, setDisplayName] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
-  const [message, setMessage] = useState<React.ReactNode>('');
+  const [message, setMessage] = useState<{ text: string; type: 'success' | 'warning' | 'error' } | null>(null); // Structured message
   const [showNewPassword, setShowNewPassword] = useState<boolean>(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
   const [language, setLanguage] = useState<'en' | 'vi'>('en');
@@ -54,8 +61,8 @@ function App() {
   const [isProcessing, setIsProcessing] = useState<boolean>(false);
   const [showResetPopup, setShowResetPopup] = useState<boolean>(false);
   const [secretCode, setSecretCode] = useState<string>('');
-  //const [resetMessage, setResetMessage] = useState<React.ReactNode>('');
   const [resetMessage, setResetMessage] = useState<string>('');
+
   const translations: Translations = {
     en: {
       title: 'GELEXIMCO - ACCOUNT MANAGEMENT',
@@ -135,12 +142,12 @@ function App() {
         setLoginUsername('');
         setLoginPassword('');
       } else {
-        setLoginMessage(<p className="error">{translations[language].loginError}</p>);
+        setLoginMessage(translations[language].loginError);
         setTimeout(() => setLoginMessage(''), 2000);
       }
     } catch (error) {
       console.error('Login Error:', error);
-      setLoginMessage(<p className="error">{translations[language].loginError}</p>);
+      setLoginMessage(translations[language].loginError);
       setTimeout(() => setLoginMessage(''), 2000);
     } finally {
       setIsProcessing(false);
@@ -153,15 +160,14 @@ function App() {
     const trimmedConfirmPassword = confirmPassword.trim();
 
     if (username && trimmedPassword && trimmedConfirmPassword) {
-      // Dynamically create regex with username
       const PASSWORD_REGEX = new RegExp(
         `^(?!.*${username}$)(?=(?:[^A-Z]*[A-Z]){1,})(?=(?:[^a-z]*[a-z]){1,})(?=(?:[^0-9]*[0-9]){1,})(?=(?:[^@#$!%*?&]*[@#$!%*?&]){1,}).{11,}$`
       );
 
       if (!PASSWORD_REGEX.test(trimmedPassword)) {
-        setMessage(<p className="error">{translations[language].passwordRequirement}</p>);
+        setMessage({ text: translations[language].passwordRequirement, type: 'error' });
         setTimeout(() => {
-          setMessage('');
+          setMessage(null);
           setPassword('');
           setConfirmPassword('');
         }, 10000);
@@ -169,9 +175,9 @@ function App() {
       }
 
       if (trimmedPassword !== trimmedConfirmPassword) {
-        setMessage(<p className="error">{translations[language].matchError}</p>);
+        setMessage({ text: translations[language].matchError, type: 'error' });
         setTimeout(() => {
-          setMessage('');
+          setMessage(null);
           setPassword('');
           setConfirmPassword('');
         }, 3000);
@@ -194,29 +200,25 @@ function App() {
         });
 
         if (azureResponse.data.success) {
-          setMessage(
-            <p className="success">
-              {translations[language].successMessage}
-              {displayName}!
-            </p>
-          );
+          setMessage({
+            text: `${translations[language].successMessage}${displayName}!`,
+            type: 'success',
+          });
           setPasswordChanged(true);
         } else {
-          setMessage(
-            <p className="warning">
-              {translations[language].azurePendingWarning}
-              {azureResponse.data.message}
-            </p>
-          );
+          setMessage({
+            text: `${translations[language].azurePendingWarning}${azureResponse.data.message}`,
+            type: 'warning',
+          });
           setPasswordChanged(true);
         }
         setPassword('');
         setConfirmPassword('');
       } catch (error: any) {
         console.error('Password Change Error:', error);
-        setMessage(<p className="error">{error.message || translations[language].matchError}</p>);
+        setMessage({ text: error.message || translations[language].matchError, type: 'error' });
         setTimeout(() => {
-          setMessage('');
+          setMessage(null);
           setPassword('');
           setConfirmPassword('');
         }, 5000);
@@ -224,9 +226,9 @@ function App() {
         setIsProcessing(false);
       }
     } else {
-      setMessage(<p className="error">{translations[language].fieldsError}</p>);
+      setMessage({ text: translations[language].fieldsError, type: 'error' });
       setTimeout(() => {
-        setMessage('');
+        setMessage(null);
         setPassword('');
         setConfirmPassword('');
       }, 3000);
@@ -240,18 +242,24 @@ function App() {
         setLoggedIn(false);
         setUsername('');
         setDisplayName('');
-        setMessage('');
+        setMessage(null);
         setPasswordChanged(false);
       })
       .catch((error) => {
         console.error('Logout Error:', error);
-        setMessage(<p className="error">Logout failed. Please try again.</p>);
-        setTimeout(() => setMessage(''), 2000);
+        setMessage({ text: 'Logout failed. Please try again.', type: 'error' });
+        setTimeout(() => setMessage(null), 2000);
       });
   };
 
   const handleResetPassword = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
+    if (!loginUsername || !secretCode) {
+      setResetMessage(translations[language].fieldsError);
+      setTimeout(() => setResetMessage(''), 2000);
+      return;
+    }
+
     setIsProcessing(true);
     try {
       console.log('Attempting reset with:', { username: loginUsername, secretCode });
@@ -271,15 +279,14 @@ function App() {
         setLoggedIn(true);
         console.log('State after success:', { loggedIn: true, showResetPopup: false });
       } else {
-        console.log('Reset failed, staying on popup with message:', response.data.message);
-        setResetMessage(translations[language].invalidCodeError); // Plain string
+        // Map all INVALID_CODE_ERROR_* to invalidCodeError for now
+        setResetMessage(translations[language].invalidCodeError);
         setTimeout(() => setResetMessage(''), 2000);
       }
-    } catch (error: unknown) { // Use 'unknown' as the catch type
-      const axiosError = error as AxiosError; // Type assertion
+    } catch (error) {
+      const axiosError = error as AxiosError<ErrorResponse>;
       console.error('Reset Password Error:', axiosError.response ? axiosError.response.data : axiosError.message);
-      console.log('Reset failed due to error, staying on popup');
-      setResetMessage(translations[language].invalidCodeError); // Plain string
+      setResetMessage(translations[language].invalidCodeError);
       setTimeout(() => setResetMessage(''), 2000);
     } finally {
       setIsProcessing(false);
@@ -312,11 +319,22 @@ function App() {
                   setResetMessage('');
                 }}
                 disabled={isProcessing}
+                aria-label="Close reset popup"
               >
                 <i className="bi bi-x"></i>
               </button>
               <form onSubmit={handleResetPassword}>
                 <p>{translations[language].resetInstructions}</p>
+                <div>
+                  <label>{translations[language].loginUsernameLabel}</label>
+                  <input
+                    type="text"
+                    value={loginUsername}
+                    onChange={(e) => setLoginUsername(e.target.value)}
+                    placeholder={translations[language].loginPlaceholder}
+                    disabled={isProcessing}
+                  />
+                </div>
                 <div>
                   <label>{translations[language].secretCodeLabel}</label>
                   <input
@@ -330,7 +348,7 @@ function App() {
                 <button type="submit" disabled={isProcessing}>
                   {translations[language].submitCodeButton}
                 </button>
-                <p>{resetMessage}</p>
+                <p className="error">{resetMessage}</p>
               </form>
             </div>
           ) : (
@@ -359,6 +377,7 @@ function App() {
                   className="show-password"
                   onClick={() => setShowLoginPassword(!showLoginPassword)}
                   disabled={isProcessing}
+                  aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
                 >
                   <i className={showLoginPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
                 </button>
@@ -376,7 +395,7 @@ function App() {
               <button type="submit" disabled={isProcessing}>
                 {translations[language].loginButton}
               </button>
-              <p>{loginMessage}</p>
+              <p className="error">{loginMessage}</p>
             </form>
           )
         ) : (
@@ -389,7 +408,7 @@ function App() {
               <>
                 <div>
                   <label>{translations[language].usernameLabel}</label>
-                  <span className="username-display">{username}</span> {/* Changed from input to span */}
+                  <span className="username-display">{username}</span>
                 </div>
                 <div>
                   <label>{translations[language].newPasswordLabel}</label>
@@ -434,7 +453,7 @@ function App() {
                 </button>
               </>
             )}
-            <p>{message}</p>
+            {message && <p className={message.type}>{message.text}</p>}
           </form>
         )}
       </div>
