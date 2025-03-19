@@ -30,6 +30,7 @@ interface Translation {
   secretCodePlaceholder: string;
   submitCodeButton: string;
   invalidCodeError: string;
+  validationSuccess: string; // New
 }
 
 interface Translations {
@@ -62,6 +63,7 @@ function App() {
   const [showResetPopup, setShowResetPopup] = useState<boolean>(false);
   const [secretCode, setSecretCode] = useState<string>('');
   const [resetMessage, setResetMessage] = useState<string>('');
+  const [showValidationSuccess, setShowValidationSuccess] = useState<boolean>(false); // New state for validation success
 
   const translations: Translations = {
     en: {
@@ -90,7 +92,8 @@ function App() {
       secretCodeLabel: 'Secret Code: ',
       secretCodePlaceholder: 'Enter the secret code',
       submitCodeButton: 'Submit Code',
-      invalidCodeError: 'The informations were invalid input or expired secret code. Please try again with the exact username and secret code or contact IT admin for helping.',
+      invalidCodeError: 'The informations were invalid input or expired secret code. Please try again with the exact USERNAME and SECRET CODE or contact the system administrator for helping.',
+      validationSuccess: 'The validation was successful, now you can proceed to change your password.', // New
     },
     vi: {
       title: 'GELEXIMCO - QUẢN LÝ TÀI KHOẢN',
@@ -118,7 +121,8 @@ function App() {
       secretCodeLabel: 'Mã bí mật: ',
       secretCodePlaceholder: 'Nhập mã bí mật',
       submitCodeButton: 'Xác nhận mã',
-      invalidCodeError: 'Thông tin bạn nhập không hợp lệ hoặc đã hết hạn. Vui lòng thử lại với tên đăng nhập và mã bí mật chính xác hoặc liên hệ quản trị viên hệ thống.',
+      invalidCodeError: 'Thông tin bạn nhập không hợp lệ hoặc đã hết hạn. Vui lòng thử lại với TÊN ĐĂNG NHẬP và MÃ BÍ MẬT chính xác hoặc liên hệ quản trị viên hệ thống.',
+      validationSuccess: 'Xác thực thành công, tiếp theo bạn có thể tiến hành thay đổi mật khẩu.', // New
     },
   };
 
@@ -259,7 +263,7 @@ function App() {
       setTimeout(() => setResetMessage(''), 2000);
       return;
     }
-
+  
     setIsProcessing(true);
     try {
       console.log('Attempting reset with:', { username: loginUsername, secretCode });
@@ -268,26 +272,30 @@ function App() {
         secretCode,
       });
       console.log('Reset response:', response.data);
-
+  
       if (response.data.success) {
-        console.log('Reset successful, transitioning to password change');
-        setResetMessage('');
-        setShowResetPopup(false);
+        console.log('Reset successful, showing validation success');
+        setShowResetPopup(false); // Close reset popup
+        setShowValidationSuccess(true); // Show success message
         setSecretCode('');
         setUsername(response.data.username);
         setDisplayName(response.data.displayName || response.data.username);
-        setLoggedIn(true);
-        console.log('State after success:', { loggedIn: true, showResetPopup: false });
+        // Transition to password change form after 3 seconds
+        setTimeout(() => {
+          setShowValidationSuccess(false);
+          setLoggedIn(true);
+          console.log('Transitioned to password change form');
+        }, 3000);
       } else {
-        // Map all INVALID_CODE_ERROR_* to invalidCodeError for now
+        console.log('Reset failed with response:', response.data.message);
         setResetMessage(translations[language].invalidCodeError);
-        setTimeout(() => setResetMessage(''), 2000);
+        setTimeout(() => setResetMessage(''), 5000);
       }
     } catch (error) {
       const axiosError = error as AxiosError<ErrorResponse>;
       console.error('Reset Password Error:', axiosError.response ? axiosError.response.data : axiosError.message);
       setResetMessage(translations[language].invalidCodeError);
-      setTimeout(() => setResetMessage(''), 2000);
+      setTimeout(() => setResetMessage(''), 5000);
     } finally {
       setIsProcessing(false);
     }
@@ -308,7 +316,11 @@ function App() {
         <img src="/logo.png" alt="DragonDoson Logo" style={{ width: '170px' }} />
         <h1>{translations[language].title}</h1>
         {!loggedIn ? (
-          showResetPopup ? (
+          showValidationSuccess ? (
+            <div className="validation-success">
+              <p className="success">{translations[language].validationSuccess}</p>
+            </div>
+          ) : showResetPopup ? (
             <div className="reset-popup">
               <button
                 type="button"
@@ -348,7 +360,7 @@ function App() {
                 <button type="submit" disabled={isProcessing}>
                   {translations[language].submitCodeButton}
                 </button>
-                <p className="error">{resetMessage}</p>
+                {resetMessage && <p className="error">{resetMessage}</p>}
               </form>
             </div>
           ) : (

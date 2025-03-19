@@ -147,70 +147,77 @@ app.post('/api/reset-password', asyncHandler(async (req, res) => {
 
   if (!username || !secretCode) {
     console.log('Missing username or secret code:', { username, secretCode });
-    return res.status(400).json({ success: false, message: 'INVALID_CODE_ERROR_02' }); // Missing fields
+    return res.status(400).json({ success: false, message: 'INVALID_CODE_ERROR_02' });
   }
 
   try {
     const fileContent = await fs.readFile(SECRET_CODE_FILE, 'utf8');
     const lines = fileContent.trim().split('\n');
     let updatedLines = [...lines];
-    let foundMatch = false;
-    let matchIndex = -1;
+    const now = new Date();
+    const TWENTY_MINUTES_MS = 20 * 60 * 1000;
 
+    // First pass: Check and mark expired lines
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      if (line.startsWith('#EXPIRED#') || line.startsWith('#VALIDATED#')) continue; // Skip already expired or validated lines
+      if (line.startsWith('#EXPIRED#') || line.startsWith('#VALIDATED#')) continue;
 
       const [storedCode, storedUsername, timeStr] = line.split(' || ').map(part => part.trim());
-      if (!storedCode || !storedUsername || !timeStr) continue; // Skip malformed lines
+      if (!storedCode || !storedUsername || !timeStr) continue;
 
-      // Parse stored time (hh:mm)
-      const [hours, minutes] = timeStr.split(':').map(Number);
-      const storedDate = new Date();
-      storedDate.setHours(hours, minutes, 0, 0); // Set to today’s date with stored time
-
-      const now = new Date();
-      const timeDiffMs = now - storedDate;
-      const TWENTY_MINUTES_MS = 20 * 60 * 1000; // 20 minutes in milliseconds
-
-      // Check expiration
-      if (timeDiffMs > TWENTY_MINUTES_MS || timeDiffMs < 0) { // Expired or future time
-        updatedLines[i] = `#EXPIRED# ${line}`; // Mark as expired
-        if (storedUsername === username && storedCode === secretCode) {
-          // If this is the matching line but expired, return specific error
-          await fs.writeFile(SECRET_CODE_FILE, updatedLines.join('\n'), 'utf8');
-          return res.status(401).json({ success: false, message: 'INVALID_CODE_ERROR_01' }); // Expired code
-        }
+      const storedDate = new Date(timeStr); // Assuming updated format with date
+      if (isNaN(storedDate.getTime())) {
+        console.log('Invalid date-time format in line:', line);
         continue;
       }
 
-      // Check match
+      const timeDiffMs = now - storedDate;
+      if (timeDiffMs > TWENTY_MINUTES_MS || timeDiffMs < 0) {
+        updatedLines[i] = `#EXPIRED# ${line}`;
+        console.log('Marked as expired:', line);
+      }
+    }
+
+    // Write back expired updates
+    await fs.writeFile(SECRET_CODE_FILE, updatedLines.join('\n'), 'utf8');
+    console.log('Updated reset_password.code with expired entries:', updatedLines);
+
+    // Second pass: Check for a match among non-expired lines
+    let foundMatch = false;
+    let matchIndex = -1;
+
+    for (let i = 0; i < updatedLines.length; i++) {
+      const line = updatedLines[i];
+      if (line.startsWith('#EXPIRED#') || line.startsWith('#VALIDATED#')) continue;
+
+      const [storedCode, storedUsername, timeStr] = line.split(' || ').map(part => part.trim());
+      if (!storedCode || !storedUsername || !timeStr) continue;
+
       if (storedUsername === username && storedCode === secretCode) {
         foundMatch = true;
         matchIndex = i;
-        break; // Stop searching after first valid match
+        break;
       }
     }
 
     if (!foundMatch) {
-      // Write back updated file with any expired lines marked
-      await fs.writeFile(SECRET_CODE_FILE, updatedLines.join('\n'), 'utf8');
-      return res.status(401).json({ success: false, message: 'INVALID_CODE_ERROR_03' }); // No valid match
+      console.log('No valid match found for:', { username, secretCode });
+      return res.status(401).json({ success: false, message: 'INVALID_CODE_ERROR_03' });
     }
 
     // Mark the successful match as validated
     updatedLines[matchIndex] = `#VALIDATED# ${lines[matchIndex]}`;
     await fs.writeFile(SECRET_CODE_FILE, updatedLines.join('\n'), 'utf8');
+    console.log('Validated match:', lines[matchIndex]);
 
-    // Success: Return username (no AD lookup)
     res.json({
       success: true,
       username,
-      displayName: username, // Placeholder; AD lookup happens later if needed
+      displayName: username,
     });
   } catch (error) {
     console.error('Reset Password Error:', error.message);
-    res.status(500).json({ success: false, message: 'INVALID_CODE_ERROR_04' }); // Server error
+    res.status(500).json({ success: false, message: 'INVALID_CODE_ERROR_04' });
   }
 }));
 
