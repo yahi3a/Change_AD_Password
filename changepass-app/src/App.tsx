@@ -115,8 +115,8 @@ function App() {
       azurePendingWarning: 'Mật khẩu đăng nhập Windows đã được thay đổi, nhưng Mật khẩu tài khoản Email & Office 365 có thể mất tới 24 giờ để cập nhật. Vui lòng thử lại sau.',
       forgotPassword: 'Bạn quên mật khẩu?',
       resetInstructions: 'Vui lòng liên hệ quản trị viên hệ thống - BCNTT để nhận mã bí mật nhằm đặt lại mật khẩu của bạn. Mã bí mật chỉ có hiệu lực trong 20 phút.',
-      secretCodeLabel: 'Mã bí mật: ',
-      secretCodePlaceholder: 'Nhập mã bí mật',
+      secretCodeLabel: 'Mã xác thực: ',
+      secretCodePlaceholder: 'Nhập chuỗi ký tự bí mật được IT cung cấp',
       submitCodeButton: 'Xác nhận mã',
       invalidCodeError: 'Thông tin bạn nhập không hợp lệ hoặc đã hết hạn. Vui lòng thử lại với tên đăng nhập và mã bí mật chính xác hoặc liên hệ quản trị viên hệ thống.',
     },
@@ -237,7 +237,7 @@ function App() {
 
   const handleLogout = () => {
     axios
-      .post(`${API_URL}/logout`)
+      .post(`${API_URL}/logout`, { username }) // Send username in body
       .then(() => {
         setLoggedIn(false);
         setUsername('');

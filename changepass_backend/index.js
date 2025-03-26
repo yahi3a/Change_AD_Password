@@ -23,15 +23,18 @@ const adConfig = {
 };
 
 const PENDING_FILE = path.join(__dirname, 'pending-azure-changes.json');
-const SECRET_CODE_FILE = path.join(__dirname, 'secrets/reset_password.code'); // Moved to back-end secrets folder
+const SECRET_CODE_FILE = path.join(__dirname, 'secrets/reset_password.code');
 const PORT = process.env.PORT || 3001;
 const RETRY_INTERVAL = 300000; // 5 minutes
 const TWENTY_MINUTES = 20 * 60 * 1000; // 20 minutes in milliseconds
 
+// In-memory store for login passwords (username -> password mapping)
+const userPasswords = new Map();
+
 const asyncHandler = fn => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(error => {
     console.error('Error:', error);
-    res.status(500).json({ success: false, message: 'INVALID_CODE_ERROR_04' }); // Server error
+    res.status(500).json({ success: false, message: 'INVALID_CODE_ERROR_04' });
   });
 
 const validateEnv = () => {
@@ -59,14 +62,17 @@ const initializeSecretCodeFile = async () => {
 
 const execPS = async (command) => {
   try {
-    const { stdout, stderr } = await exec(command, { encoding: 'utf8' });
-    if (stderr && stderr.includes('ERROR')) {
-      throw new Error(stderr);
-    }
-    console.log('Raw stdout (before parsing):', stdout);
+    const { stdout, stderr } = await exec(command, { 
+      encoding: 'utf8',
+      timeout: 30000 // 30-second timeout to prevent hanging
+    });
+    console.log('Raw stdout:', stdout);
+    console.log('Raw stderr:', stderr);
+    if (stderr && !stdout) throw new Error(stderr || 'PowerShell command failed without output');
     return stdout;
   } catch (error) {
-    throw new Error(error.message);
+    console.error('ExecPS Error:', error.message);
+    throw new Error(error.message || 'Unknown PowerShell execution error');
   }
 };
 
@@ -84,7 +90,7 @@ app.post('/api/login', asyncHandler(async (req, res) => {
   try {
     const findStdout = await execPS(findUserCommand);
     const userData = JSON.parse(findStdout);
-    console.log('Found огра user data:', userData);
+    console.log('Found user data:', userData);
     if (!userData.UserPrincipalName) {
       throw new Error('User not found in AD');
     }
@@ -92,6 +98,10 @@ app.post('/api/login', asyncHandler(async (req, res) => {
 
     const authCommand = `powershell -Command "& {[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${getCredString(fullUPN, password)} Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred | Out-String}"`;
     await execPS(authCommand);
+
+    // Store the login password in memory
+    userPasswords.set(username, password);
+    console.log(`Stored login password for ${username}`);
 
     res.json({
       success: true,
@@ -105,6 +115,12 @@ app.post('/api/login', asyncHandler(async (req, res) => {
 }));
 
 app.post('/api/logout', (req, res) => {
+  // Clear the stored password on logout
+  const { username } = req.body; // Assume username is sent in logout request
+  if (username && userPasswords.has(username)) {
+    userPasswords.delete(username);
+    console.log(`Cleared stored password for ${username}`);
+  }
   res.json({ success: true, message: 'Logged out successfully' });
 });
 
@@ -113,9 +129,26 @@ app.post('/api/change-ad-password', asyncHandler(async (req, res) => {
   if (!username || !newPassword) {
     return res.status(400).json({ success: false, message: 'Username and new password required' });
   }
-  const command = `powershell -Command "${getCredString(adConfig.username, adConfig.password)} Set-ADAccountPassword -Identity '${username}' -NewPassword (ConvertTo-SecureString '${newPassword}' -AsPlainText -Force) -Server '${adConfig.server}' -Credential $cred"`;
-  await execPS(command);
-  res.json({ success: true, message: 'AD password changed successfully' });
+
+  // Retrieve the old password from the in-memory store
+  const oldPassword = userPasswords.get(username);
+  if (!oldPassword) {
+    return res.status(400).json({ success: false, message: 'No login password available. Please log in again.' });
+  }
+
+  console.log('Attempting to change AD password for:', username);
+  // Use -OldPassword with the stored login password
+  const command = `powershell -Command "${getCredString(adConfig.username, adConfig.password)} Set-ADAccountPassword -Identity '${username}' -OldPassword (ConvertTo-SecureString '${oldPassword}' -AsPlainText -Force) -NewPassword (ConvertTo-SecureString '${newPassword}' -AsPlainText -Force) -Server '${adConfig.server}' -Credential $cred"`;
+  console.log('Executing command:', command);
+
+  try {
+    const result = await execPS(command);
+    console.log('Password change result:', result);
+    res.json({ success: true, message: 'AD password changed successfully' });
+  } catch (error) {
+    console.error('Password change failed:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to change AD password' });
+  }
 }));
 
 app.post('/api/change-azure-password', asyncHandler(async (req, res) => {
@@ -147,70 +180,77 @@ app.post('/api/reset-password', asyncHandler(async (req, res) => {
 
   if (!username || !secretCode) {
     console.log('Missing username or secret code:', { username, secretCode });
-    return res.status(400).json({ success: false, message: 'INVALID_CODE_ERROR_02' }); // Missing fields
+    return res.status(400).json({ success: false, message: 'INVALID_CODE_ERROR_02' });
   }
 
   try {
     const fileContent = await fs.readFile(SECRET_CODE_FILE, 'utf8');
     const lines = fileContent.trim().split('\n');
     let updatedLines = [...lines];
-    let foundMatch = false;
-    let matchIndex = -1;
+    const now = new Date();
+    const TWENTY_MINUTES_MS = 20 * 60 * 1000;
 
+    // First pass: Check and mark expired lines
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
-      if (line.startsWith('#EXPIRED#') || line.startsWith('#VALIDATED#')) continue; // Skip already expired or validated lines
+      if (line.startsWith('#EXPIRED#') || line.startsWith('#VALIDATED#')) continue;
 
       const [storedCode, storedUsername, timeStr] = line.split(' || ').map(part => part.trim());
-      if (!storedCode || !storedUsername || !timeStr) continue; // Skip malformed lines
+      if (!storedCode || !storedUsername || !timeStr) continue;
 
-      // Parse stored time (hh:mm)
-      const [hours, minutes] = timeStr.split(':').map(Number);
-      const storedDate = new Date();
-      storedDate.setHours(hours, minutes, 0, 0); // Set to today’s date with stored time
-
-      const now = new Date();
-      const timeDiffMs = now - storedDate;
-      const TWENTY_MINUTES_MS = 20 * 60 * 1000; // 20 minutes in milliseconds
-
-      // Check expiration
-      if (timeDiffMs > TWENTY_MINUTES_MS || timeDiffMs < 0) { // Expired or future time
-        updatedLines[i] = `#EXPIRED# ${line}`; // Mark as expired
-        if (storedUsername === username && storedCode === secretCode) {
-          // If this is the matching line but expired, return specific error
-          await fs.writeFile(SECRET_CODE_FILE, updatedLines.join('\n'), 'utf8');
-          return res.status(401).json({ success: false, message: 'INVALID_CODE_ERROR_01' }); // Expired code
-        }
+      const storedDate = new Date(timeStr); // Assuming updated format with date
+      if (isNaN(storedDate.getTime())) {
+        console.log('Invalid date-time format in line:', line);
         continue;
       }
 
-      // Check match
+      const timeDiffMs = now - storedDate;
+      if (timeDiffMs > TWENTY_MINUTES_MS || timeDiffMs < 0) {
+        updatedLines[i] = `#EXPIRED# ${line}`;
+        console.log('Marked as expired:', line);
+      }
+    }
+
+    // Write back expired updates
+    await fs.writeFile(SECRET_CODE_FILE, updatedLines.join('\n'), 'utf8');
+    console.log('Updated reset_password.code with expired entries:', updatedLines);
+
+    // Second pass: Check for a match among non-expired lines
+    let foundMatch = false;
+    let matchIndex = -1;
+
+    for (let i = 0; i < updatedLines.length; i++) {
+      const line = updatedLines[i];
+      if (line.startsWith('#EXPIRED#') || line.startsWith('#VALIDATED#')) continue;
+
+      const [storedCode, storedUsername, timeStr] = line.split(' || ').map(part => part.trim());
+      if (!storedCode || !storedUsername || !timeStr) continue;
+
       if (storedUsername === username && storedCode === secretCode) {
         foundMatch = true;
         matchIndex = i;
-        break; // Stop searching after first valid match
+        break;
       }
     }
 
     if (!foundMatch) {
-      // Write back updated file with any expired lines marked
-      await fs.writeFile(SECRET_CODE_FILE, updatedLines.join('\n'), 'utf8');
-      return res.status(401).json({ success: false, message: 'INVALID_CODE_ERROR_03' }); // No valid match
+      console.log('No valid match found for:', { username, secretCode });
+      return res.status(401).json({ success: false, message: 'INVALID_CODE_ERROR_03' });
     }
 
     // Mark the successful match as validated
     updatedLines[matchIndex] = `#VALIDATED# ${lines[matchIndex]}`;
     await fs.writeFile(SECRET_CODE_FILE, updatedLines.join('\n'), 'utf8');
+    console.log('Validated match:', lines[matchIndex]);
 
-    // Success: Return username (no AD lookup)
     res.json({
       success: true,
       username,
-      displayName: username, // Placeholder; AD lookup happens later if needed
+      displayName: username,
     });
   } catch (error) {
     console.error('Reset Password Error:', error.message);
-    res.status(500).json({ success: false, message: 'INVALID_CODE_ERROR_04' }); // Server error
+    res.status(500).json({ success: false, message: 'INVALID_CODE_ERROR_04' });
   }
 }));
 
