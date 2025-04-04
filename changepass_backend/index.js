@@ -65,7 +65,9 @@ const execPS = async (command) => {
     });
     console.log('Raw stdout:', stdout);
     console.log('Raw stderr:', stderr);
-    if (stderr && !stdout) throw new Error(stderr || 'PowerShell command failed without output');
+    if (stderr && stderr.includes('Exception') && !stdout) {
+      throw new Error(stderr || 'PowerShell command failed without output');
+    }
     return stdout;
   } catch (error) {
     console.error('ExecPS Error:', error.message);
@@ -166,7 +168,7 @@ app.post('/api/reset-password', asyncHandler(async (req, res) => {
     const lines = fileContent.trim().split('\n');
     let updatedLines = [...lines];
     const now = new Date();
-    const TWENTY_MINUTES_MS = 20 * 60 * 1000;
+    // const TWENTY_MINUTES_MS = 20 * 60 * 1000;
 
     // First pass: Check and mark expired lines
     for (let i = 0; i < lines.length; i++) {
@@ -244,27 +246,31 @@ const getPendingChanges = async () => {
 };
 
 const retryPendingChanges = async () => {
-  const pending = await getPendingChanges();
-  if (!pending.length) return;
-  console.log('Retrying pending Azure AD changes...');
-  const updatedPending = [];
+  try {
+    const pending = await getPendingChanges();
+    if (!pending.length) return;
+    console.log('Retrying pending Azure AD changes...');
+    const updatedPending = [];
 
-  for (const { username, newPassword } of pending) {
-    const findUserCommand = `powershell -Command "& {[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${getCredString(adConfig.username, adConfig.password)} Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName | Select-Object -Property UserPrincipalName | ConvertTo-Json -Compress | Out-String}"`;
-    try {
-      const findStdout = await execPS(findUserCommand);
-      const userData = JSON.parse(findStdout);
-      const azureUsername = userData.UserPrincipalName;
+    for (const { username, newPassword } of pending) {
+      const findUserCommand = `powershell -Command "& {[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${getCredString(adConfig.username, adConfig.password)} Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName | Select-Object -Property UserPrincipalName | ConvertTo-Json -Compress | Out-String}"`;
+      try {
+        const findStdout = await execPS(findUserCommand);
+        const userData = JSON.parse(findStdout);
+        const azureUsername = userData.UserPrincipalName;
 
-      const command = `powershell -Command "${getCredString(adConfig.username, adConfig.password)} Connect-MsolService -Credential $cred; Set-MsolUserPassword -UserPrincipalName '${azureUsername}' -NewPassword '${newPassword}' -ForceChangePassword $false"`;
-      await execPS(command);
-      console.log(`Retry succeeded for ${username}`);
-    } catch (error) {
-      console.error(`Retry failed for ${username}:`, error.message);
-      updatedPending.push({ username, newPassword, timestamp: Date.now() });
+        const command = `powershell -Command "${getCredString(adConfig.username, adConfig.password)} Connect-MsolService -Credential $cred; Set-MsolUserPassword -UserPrincipalName '${azureUsername}' -NewPassword '${newPassword}' -ForceChangePassword $false"`;
+        await execPS(command);
+        console.log(`Retry succeeded for ${username}`);
+      } catch (error) {
+        console.error(`Retry failed for ${username}:`, error.message);
+        updatedPending.push({ username, newPassword, timestamp: Date.now() });
+      }
     }
+    await fs.writeFile(PENDING_FILE, JSON.stringify(updatedPending, null, 2));
+  } catch (error) {
+    console.error('Retry Pending Changes Error:', error.message);
   }
-  await fs.writeFile(PENDING_FILE, JSON.stringify(updatedPending, null, 2));
 };
 
 const startServer = async () => {
