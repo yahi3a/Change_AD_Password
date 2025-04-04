@@ -241,7 +241,7 @@ function App() {
 
   const handleLogout = () => {
     axios
-      .post(`${API_URL}/logout`)
+      .post(`${API_URL}/logout`, { username }) // Send username in body
       .then(() => {
         setLoggedIn(false);
         setUsername('');

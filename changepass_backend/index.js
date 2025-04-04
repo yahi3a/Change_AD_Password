@@ -23,7 +23,7 @@ const adConfig = {
 };
 
 const PENDING_FILE = path.join(__dirname, 'pending-azure-changes.json');
-const SECRET_CODE_FILE = path.join(__dirname, 'secrets/reset_password.code'); // Moved to back-end secrets folder
+const SECRET_CODE_FILE = path.join(__dirname, 'secrets/reset_password.code');
 const PORT = process.env.PORT || 3001;
 const RETRY_INTERVAL = 300000; // 5 minutes
 const TWENTY_MINUTES = 20 * 60 * 1000; // 20 minutes in milliseconds
@@ -31,7 +31,7 @@ const TWENTY_MINUTES = 20 * 60 * 1000; // 20 minutes in milliseconds
 const asyncHandler = fn => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(error => {
     console.error('Error:', error);
-    res.status(500).json({ success: false, message: 'INVALID_CODE_ERROR_04' }); // Server error
+    res.status(500).json({ success: false, message: 'INVALID_CODE_ERROR_04' });
   });
 
 const validateEnv = () => {
@@ -59,14 +59,17 @@ const initializeSecretCodeFile = async () => {
 
 const execPS = async (command) => {
   try {
-    const { stdout, stderr } = await exec(command, { encoding: 'utf8' });
-    if (stderr && stderr.includes('ERROR')) {
-      throw new Error(stderr);
-    }
-    console.log('Raw stdout (before parsing):', stdout);
+    const { stdout, stderr } = await exec(command, { 
+      encoding: 'utf8',
+      timeout: 30000 // 30-second timeout to prevent hanging
+    });
+    console.log('Raw stdout:', stdout);
+    console.log('Raw stderr:', stderr);
+    if (stderr && !stdout) throw new Error(stderr || 'PowerShell command failed without output');
     return stdout;
   } catch (error) {
-    throw new Error(error.message);
+    console.error('ExecPS Error:', error.message);
+    throw new Error(error.message || 'Unknown PowerShell execution error');
   }
 };
 
@@ -84,7 +87,7 @@ app.post('/api/login', asyncHandler(async (req, res) => {
   try {
     const findStdout = await execPS(findUserCommand);
     const userData = JSON.parse(findStdout);
-    console.log('Found огра user data:', userData);
+    console.log('Found user data:', userData);
     if (!userData.UserPrincipalName) {
       throw new Error('User not found in AD');
     }
@@ -113,9 +116,17 @@ app.post('/api/change-ad-password', asyncHandler(async (req, res) => {
   if (!username || !newPassword) {
     return res.status(400).json({ success: false, message: 'Username and new password required' });
   }
+  console.log('Attempting to change AD password for:', username);
   const command = `powershell -Command "${getCredString(adConfig.username, adConfig.password)} Set-ADAccountPassword -Identity '${username}' -NewPassword (ConvertTo-SecureString '${newPassword}' -AsPlainText -Force) -Server '${adConfig.server}' -Credential $cred"`;
-  await execPS(command);
-  res.json({ success: true, message: 'AD password changed successfully' });
+  console.log('Executing command:', command);
+  try {
+    const result = await execPS(command);
+    console.log('Password change result:', result);
+    res.json({ success: true, message: 'AD password changed successfully' });
+  } catch (error) {
+    console.error('Password change failed:', error);
+    res.status(500).json({ success: false, message: error.message || 'Failed to change AD password' });
+  }
 }));
 
 app.post('/api/change-azure-password', asyncHandler(async (req, res) => {
