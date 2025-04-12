@@ -2,7 +2,6 @@
 
 .App {
   font-family: 'Montserrat', 'Roboto', sans-serif;
-  /* Fallback to Roboto */
   min-height: 100vh;
   background-image: url('./assets/background.jpg');
   background-size: cover;
@@ -155,39 +154,6 @@ button:focus {
   color: #ffffff;
 }
 
-.language-toggle {
-  position: absolute;
-  top: 20px;
-  right: 145px;
-  padding: 7px 14px;
-  font-size: 13px;
-  background-color: rgba(22, 1, 126, 0.1);
-  color: #026aa7;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background-color 0.5s ease;
-}
-
-.logout {
-  position: absolute;
-  top: 20px;
-  right: 50px;
-  padding: 7px 14px;
-  font-size: 13px;
-  background-color: rgba(22, 1, 126, 0.1);
-  color: #026aa7;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background-color 0.5s ease;
-}
-
-.language-toggle:hover,
-.logout:hover {
-  background-color: #026aa7;
-}
-
 form p {
   margin: 0;
   padding: 0;
@@ -202,7 +168,6 @@ form p.welcome {
   font-weight: 600;
   font-size: 20px;
   font-family: 'Montserrat', 'Roboto', sans-serif;
-  /* Explicitly apply here too */
 }
 
 form p.success {
@@ -235,7 +200,7 @@ form p.warning {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background-color: rgba(252, 252, 252, 0.9); /* Opaque white */
+  background-color: rgba(252, 252, 252, 0.9);
   padding: 20px;
   border-radius: 12px;
   box-shadow: 0 6px 12px rgba(255, 0, 0, 0);
@@ -243,6 +208,7 @@ form p.warning {
   max-width: 500px;
   z-index: 1000;
 }
+
 .reset-popup form {
   display: flex;
   flex-direction: column;
@@ -268,20 +234,18 @@ form p.warning {
 .reset-popup .close-button {
   position: absolute;
   top: 11px;
-  /*left: 390px;*/
   right: 11px;
   background: none;
   border: none;
-  color: #000000; /* Red color */
-  font-size: 24px; /* Larger for visibility */
+  color: #000000;
+  font-size: 24px;
   cursor: pointer;
   padding: 0;
   line-height: 1px;
-  
 }
 
 .reset-popup .close-button:hover {
-  color: #b71c1c; /* Darker red on hover */
+  color: #b71c1c;
 }
 
 .reset-popup .close-button:focus {
@@ -290,7 +254,7 @@ form p.warning {
 }
 
 .reset-popup .close-button:disabled {
-  color: #44444480; /* Faded dark when disabled */
+  color: #44444480;
   cursor: not-allowed;
 }
 
@@ -307,7 +271,7 @@ form p.warning {
   top: 50%;
   left: 50%;
   transform: translate(-50%, -50%);
-  background-color: rgba(252, 252, 252, 0.9); /* Opaque white */
+  background-color: rgba(252, 252, 252, 0.9);
   padding: 20px;
   border-radius: 12px;
   box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5);
@@ -318,32 +282,12 @@ form p.warning {
 }
 
 .validation-success p.success {
-  color: #388e3c; /* Green, matching success style */
+  color: #388e3c;
   font-size: 16px;
   font-weight: bold;
   margin: 0;
 }
 
-.admin-button {
-  position: absolute;
-  top: 20px;
-  right: 150px;
-  padding: 7px 14px;
-  font-size: 13px;
-  background-color: rgba(22, 1, 126, 0.1);
-  color: #026aa7;
-  border: none;
-  border-radius: 8px;
-  cursor: pointer;
-  transition: background-color 0.5s ease;
-}
-
-.admin-button:hover {
-  background-color: #026aa7;
-  color: #ffffff;
-}
-
-/* Admin Form */
 .admin-form {
   position: fixed;
   top: 50%;
@@ -370,7 +314,7 @@ form p.warning {
 .admin-form p {
   margin: 0;
   color: #004d40;
-  font-size: 15px;
+  font-size: 20px;
   font-weight: 600;
   text-align: center;
 }
@@ -405,4 +349,52 @@ form p.warning {
 .admin-form .close-button:disabled {
   color: #44444480;
   cursor: not-allowed;
+}
+
+/* Container for top-right buttons */
+.top-right-buttons {
+  width: 90%;
+  position: absolute;
+  top: 20px;
+  right: 30px;
+  display: flex;
+  gap: 10px;
+  align-items: center;  
+  justify-content: flex-end
+}
+
+/* Shared styles for top-right buttons */
+.language-toggle,
+.admin-button,
+.logout {
+  padding: 7px 14px;
+  font-size: 13px;
+  background-color: rgba(22, 1, 126, 0.1);
+  color: #026aa7;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.3s ease, color 0.3s ease;
+}
+
+.language-toggle:hover,
+.admin-button:hover,
+.logout:hover {
+  background-color: #026aa7;
+  color: #ffffff;
+}
+
+.language-toggle:focus,
+.admin-button:focus,
+.logout:focus {
+  outline: 1px solid #026aa7;
+  background-color: #026aa7;
+  color: #ffffff;
+}
+
+.language-toggle:disabled,
+.admin-button:disabled,
+.logout:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
 }

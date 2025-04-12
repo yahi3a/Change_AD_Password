@@ -30,7 +30,12 @@ interface Translation {
   secretCodePlaceholder: string;
   submitCodeButton: string;
   invalidCodeError: string;
-  validationSuccess: string; // New
+  validationSuccess: string;
+  adminButton: string;
+  adminFormTitle: string;
+  adminSuccessMessage: string;
+  adminErrorMessage: string;
+  generateButton: string; // Added for Generate button
 }
 
 interface Translations {
@@ -38,7 +43,6 @@ interface Translations {
   vi: Translation;
 }
 
-// Define the expected shape of the error response from the backend
 interface ErrorResponse {
   success: boolean;
   message?: string;
@@ -48,13 +52,13 @@ function App() {
   const [loginUsername, setLoginUsername] = useState<string>('');
   const [loginPassword, setLoginPassword] = useState<string>('');
   const [loggedIn, setLoggedIn] = useState<boolean>(false);
-  const [loginMessage, setLoginMessage] = useState<string>(''); // Changed to string for simplicity
+  const [loginMessage, setLoginMessage] = useState<string>('');
   const [showLoginPassword, setShowLoginPassword] = useState<boolean>(false);
   const [username, setUsername] = useState<string>('');
   const [displayName, setDisplayName] = useState<string>('');
   const [password, setPassword] = useState<string>('');
   const [confirmPassword, setConfirmPassword] = useState<string>('');
-  const [message, setMessage] = useState<{ text: string; type: 'success' | 'warning' | 'error' } | null>(null); // Structured message
+  const [message, setMessage] = useState<{ text: string; type: 'success' | 'warning' | 'error' } | null>(null);
   const [showNewPassword, setShowNewPassword] = useState<boolean>(false);
   const [showConfirmPassword, setShowConfirmPassword] = useState<boolean>(false);
   const [language, setLanguage] = useState<'en' | 'vi'>('en');
@@ -63,12 +67,12 @@ function App() {
   const [showResetPopup, setShowResetPopup] = useState<boolean>(false);
   const [secretCode, setSecretCode] = useState<string>('');
   const [resetMessage, setResetMessage] = useState<string>('');
-  const [showValidationSuccess, setShowValidationSuccess] = useState<boolean>(false); // New state for validation success
+  const [showValidationSuccess, setShowValidationSuccess] = useState<boolean>(false);
   const [isAdmin, setIsAdmin] = useState<boolean>(false);
   const [showAdminForm, setShowAdminForm] = useState<boolean>(false);
   const [targetUsername, setTargetUsername] = useState<string>('');
   const [newSecretCode, setNewSecretCode] = useState<string>('');
-  const [adminMessage, setAdminMessage] = useState<string>('');
+  const [adminMessage, setAdminMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
 
   const translations: Translations = {
     en: {
@@ -98,7 +102,12 @@ function App() {
       secretCodePlaceholder: 'Enter the secret code',
       submitCodeButton: 'Submit Code',
       invalidCodeError: 'The informations were invalid input or expired secret code. Please try again with the exact USERNAME and SECRET CODE or contact the system administrator for helping.',
-      validationSuccess: 'The validation was successful, now you can proceed to change your password.', // New
+      validationSuccess: 'The validation was successful, now you can proceed to change your password.',
+      adminButton: 'Admin',
+      adminFormTitle: 'Generate Secret Code for User',
+      adminSuccessMessage: 'Secret code generated successfully',
+      adminErrorMessage: 'Failed to generate secret code',
+      generateButton: 'Generate',
     },
     vi: {
       title: 'GELEXIMCO - QUẢN LÝ TÀI KHOẢN',
@@ -122,12 +131,17 @@ function App() {
       passwordRequirement: 'Mật khẩu dài tối thiểu 11 ký tự và chứa ít nhất ba trong bốn yếu tố sau: chữ viết hoa, chữ viết thường, số và ký tự đặc biệt. Ngoài ra, KHÔNG ĐƯỢC bao gồm TÊN NGƯỜI DÙNG của bạn.',
       azurePendingWarning: 'Mật khẩu đăng nhập Windows đã được thay đổi, nhưng Mật khẩu tài khoản Email & Office 365 có thể mất tới 24 giờ để cập nhật. Vui lòng thử lại sau.',
       forgotPassword: 'Bạn quên mật khẩu?',
-      resetInstructions: 'Vui lòng liên hệ quản trị viên hệ thống - BCNTT để nhận mã bí mật nhằm đặt lại mật khẩu của bạn. Mã bí mật chỉ có hiệu lực trong 20 phút.',
+      resetInstructions: 'Vui lòng liên hệ quản trị viên hệ thống - BCNTT để nhận mã xác thực bí mật nhằm đặt lại mật khẩu của bạn. Mã này chỉ có hiệu lực trong 20 phút.',
       secretCodeLabel: 'Mã xác thực: ',
-      secretCodePlaceholder: 'Nhập chuỗi ký tự bí mật được IT cung cấp',
+      secretCodePlaceholder: 'Nhập chuỗi xác thực bí mật được IT cung cấp',
       submitCodeButton: 'Xác nhận mã',
-      invalidCodeError: 'Thông tin bạn nhập không hợp lệ hoặc đã hết hạn. Vui lòng thử lại với TÊN ĐĂNG NHẬP và MÃ BÍ MẬT chính xác hoặc liên hệ quản trị viên hệ thống.',
-      validationSuccess: 'Xác thực thành công, tiếp theo bạn có thể tiến hành thay đổi mật khẩu.', // New
+      invalidCodeError: 'Thông tin bạn nhập không hợp lệ hoặc đã hết hạn. Vui lòng thử lại với TÊN ĐĂNG NHẬP và MÃ XÁC THỰC chính xác hoặc liên hệ quản trị viên hệ thống.',
+      validationSuccess: 'Xác thực thành công, tiếp theo bạn có thể tiến hành thay đổi mật khẩu.',
+      adminButton: 'Quản trị',
+      adminFormTitle: 'Tạo mã xác thực cho người dùng',
+      adminSuccessMessage: 'Mã xác thực được khởi tạo thành công',
+      adminErrorMessage: 'Không thể tạo mã xác thực',
+      generateButton: 'Khởi Tạo',
     },
   };
 
@@ -147,7 +161,7 @@ function App() {
         setLoggedIn(true);
         setUsername(response.data.username);
         setDisplayName(response.data.displayName || response.data.username);
-        setIsAdmin(response.data.isAdmin || false); // Set admin status
+        setIsAdmin(response.data.isAdmin || false);
         console.log('Set displayName to:', response.data.displayName);
         setLoginMessage('');
         setLoginUsername('');
@@ -248,7 +262,7 @@ function App() {
 
   const handleLogout = () => {
     axios
-      .post(`${API_URL}/logout`, { username }) // Send username in body
+      .post(`${API_URL}/logout`, { username })
       .then(() => {
         setLoggedIn(false);
         setUsername('');
@@ -266,8 +280,8 @@ function App() {
   const handleGenerateCode = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!targetUsername || !newSecretCode) {
-      setAdminMessage(translations[language].fieldsError);
-      setTimeout(() => setAdminMessage(''), 2000);
+      setAdminMessage({ text: translations[language].fieldsError, type: 'error' });
+      setTimeout(() => setAdminMessage(null), 2000);
       return;
     }
     setIsProcessing(true);
@@ -277,21 +291,21 @@ function App() {
         secretCode: newSecretCode,
       });
       if (response.data.success) {
-        setAdminMessage('Secret code generated successfully');
+        setAdminMessage({ text: translations[language].adminSuccessMessage, type: 'success' });
         setTimeout(() => {
-          setAdminMessage('');
+          setAdminMessage(null);
           setShowAdminForm(false);
           setTargetUsername('');
           setNewSecretCode('');
         }, 2000);
       } else {
-        setAdminMessage(response.data.message || 'Failed to generate secret code');
-        setTimeout(() => setAdminMessage(''), 2000);
+        setAdminMessage({ text: response.data.message || translations[language].adminErrorMessage, type: 'error' });
+        setTimeout(() => setAdminMessage(null), 2000);
       }
     } catch (error) {
       console.error('Generate Code Error:', error);
-      setAdminMessage('Failed to generate secret code');
-      setTimeout(() => setAdminMessage(''), 2000);
+      setAdminMessage({ text: translations[language].adminErrorMessage, type: 'error' });
+      setTimeout(() => setAdminMessage(null), 2000);
     } finally {
       setIsProcessing(false);
     }
@@ -316,12 +330,11 @@ function App() {
 
       if (response.data.success) {
         console.log('Reset successful, showing validation success');
-        setShowResetPopup(false); // Close reset popup
-        setShowValidationSuccess(true); // Show success message
+        setShowResetPopup(false);
+        setShowValidationSuccess(true);
         setSecretCode('');
         setUsername(response.data.username);
         setDisplayName(response.data.displayName || response.data.username);
-        // Transition to password change form after 3 seconds
         setTimeout(() => {
           setShowValidationSuccess(false);
           setLoggedIn(true);
@@ -450,95 +463,94 @@ function App() {
             </form>
           )
         ) : (
-          <form onSubmit={handleSubmit}>
-            <p className="welcome">
-              {translations[language].welcome}
-              {displayName}!
-            </p>
-            {!passwordChanged && (
-              <>
-                <div>
-                  <label>{translations[language].usernameLabel}</label>
-                  <span className="username-display">{username}</span>
-                </div>
-                <div>
-                  <label>{translations[language].newPasswordLabel}</label>
-                  <input
-                    type={showNewPassword ? 'text' : 'password'}
-                    value={password}
-                    onChange={(e) => setPassword(e.target.value)}
-                    placeholder={translations[language].newPasswordPlaceholder}
-                    disabled={isProcessing}
-                  />
-                  <button
-                    type="button"
-                    className="show-password"
-                    onClick={() => setShowNewPassword(!showNewPassword)}
-                    disabled={isProcessing}
-                    aria-label={showNewPassword ? 'Hide password' : 'Show password'}
-                  >
-                    <i className={showNewPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
+          !showAdminForm && (
+            <form onSubmit={handleSubmit}>
+              <p className="welcome">
+                {translations[language].welcome}
+                {displayName}!
+              </p>
+              {!passwordChanged && (
+                <>
+                  <div>
+                    <label>{translations[language].usernameLabel}</label>
+                    <span className="username-display">{username}</span>
+                  </div>
+                  <div>
+                    <label>{translations[language].newPasswordLabel}</label>
+                    <input
+                      type={showNewPassword ? 'text' : 'password'}
+                      value={password}
+                      onChange={(e) => setPassword(e.target.value)}
+                      placeholder={translations[language].newPasswordPlaceholder}
+                      disabled={isProcessing}
+                    />
+                    <button
+                      type="button"
+                      className="show-password"
+                      onClick={() => setShowNewPassword(!showNewPassword)}
+                      disabled={isProcessing}
+                      aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+                    >
+                      <i className={showNewPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
+                    </button>
+                  </div>
+                  <div>
+                    <label>{translations[language].confirmLabel}</label>
+                    <input
+                      type={showConfirmPassword ? 'text' : 'password'}
+                      value={confirmPassword}
+                      onChange={(e) => setConfirmPassword(e.target.value)}
+                      placeholder={translations[language].confirmPlaceholder}
+                      disabled={isProcessing}
+                    />
+                    <button
+                      type="button"
+                      className="show-password"
+                      onClick={() => setShowConfirmPassword(!showConfirmPassword)}
+                      disabled={isProcessing}
+                      aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                    >
+                      <i className={showConfirmPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
+                    </button>
+                  </div>
+                  <button type="submit" disabled={isProcessing}>
+                    {translations[language].changePasswordButton}
                   </button>
-                </div>
-                <div>
-                  <label>{translations[language].confirmLabel}</label>
-                  <input
-                    type={showConfirmPassword ? 'text' : 'password'}
-                    value={confirmPassword}
-                    onChange={(e) => setConfirmPassword(e.target.value)}
-                    placeholder={translations[language].confirmPlaceholder}
-                    disabled={isProcessing}
-                  />
-                  <button
-                    type="button"
-                    className="show-password"
-                    onClick={() => setShowConfirmPassword(!showConfirmPassword)}
-                    disabled={isProcessing}
-                    aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
-                  >
-                    <i className={showConfirmPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
-                  </button>
-                </div>
-                <button type="submit" disabled={isProcessing}>
-                  {translations[language].changePasswordButton}
-                </button>
-              </>
-            )}
-            {message && <p className={message.type}>{message.text}</p>}
-          </form>
+                </>
+              )}
+              {message && <p className={message.type}>{message.text}</p>}
+            </form>
+          )
         )}
       </div>
 
-      <button
-        className="language-toggle"
-        onClick={() => setLanguage(language === 'en' ? 'vi' : 'en')}
-        style={{ position: 'absolute', top: '20px', right: '145px' }}
-        disabled={isProcessing}
-      >
-        {language === 'en' ? 'Tiếng Việt' : 'English'}
-      </button>
-
-      {loggedIn && (
+      <div className="top-right-buttons">
         <button
-          onClick={handleLogout}
-          className="logout"
-          style={{ position: 'absolute', top: '20px', right: '50px' }}
+          className="language-toggle"
+          onClick={() => setLanguage(language === 'en' ? 'vi' : 'en')}
           disabled={isProcessing}
         >
-          {translations[language].logoutButton}
+          {language === 'en' ? 'Tiếng Việt' : 'English'}
         </button>
-      )}
-
-      {loggedIn && isAdmin && (
-        <button
-          onClick={() => setShowAdminForm(true)}
-          className="admin-button"
-          style={{ position: 'absolute', top: '20px', right: '150px' }}
-          disabled={isProcessing}
-        >
-          Admin
-        </button>
-      )}
+        {loggedIn && isAdmin && (
+          <button
+            className="admin-button"
+            onClick={() => setShowAdminForm(true)}
+            disabled={isProcessing}
+          >
+            {translations[language].adminButton}
+          </button>
+        )}
+        {loggedIn && (
+          <button
+            className="logout"
+            onClick={handleLogout}
+            disabled={isProcessing}
+          >
+            {translations[language].logoutButton}
+          </button>
+        )}
+      </div>
 
       {showAdminForm && (
         <div className="admin-form">
@@ -552,7 +564,7 @@ function App() {
             <i className="bi bi-x"></i>
           </button>
           <form onSubmit={handleGenerateCode}>
-            <p>Generate Secret Code for User</p>
+            <p>{translations[language].adminFormTitle}</p>
             <div>
               <label>{translations[language].usernameLabel}</label>
               <input
@@ -574,9 +586,9 @@ function App() {
               />
             </div>
             <button type="submit" disabled={isProcessing}>
-              Generate
+              {translations[language].generateButton}
             </button>
-            {adminMessage && <p className="error">{adminMessage}</p>}
+            {adminMessage && <p className={adminMessage.type}>{adminMessage.text}</p>}
           </form>
         </div>
       )}
