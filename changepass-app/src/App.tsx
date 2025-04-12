@@ -126,7 +126,8 @@ function App() {
     },
   };
 
-  const API_URL = 'http://localhost:3001/api';
+  const API_URL = 'http://localhost:3001/api'; // Use this line for development
+  // const API_URL = process.env.REACT_APP_API_URL || 'https://your-production-api-url.com/api'; // Use this line for production
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
