@@ -64,6 +64,11 @@ function App() {
   const [secretCode, setSecretCode] = useState<string>('');
   const [resetMessage, setResetMessage] = useState<string>('');
   const [showValidationSuccess, setShowValidationSuccess] = useState<boolean>(false); // New state for validation success
+  const [isAdmin, setIsAdmin] = useState<boolean>(false);
+  const [showAdminForm, setShowAdminForm] = useState<boolean>(false);
+  const [targetUsername, setTargetUsername] = useState<string>('');
+  const [newSecretCode, setNewSecretCode] = useState<string>('');
+  const [adminMessage, setAdminMessage] = useState<string>('');
 
   const translations: Translations = {
     en: {
@@ -142,6 +147,7 @@ function App() {
         setLoggedIn(true);
         setUsername(response.data.username);
         setDisplayName(response.data.displayName || response.data.username);
+        setIsAdmin(response.data.isAdmin || false); // Set admin status
         console.log('Set displayName to:', response.data.displayName);
         setLoginMessage('');
         setLoginUsername('');
@@ -257,6 +263,40 @@ function App() {
       });
   };
 
+  const handleGenerateCode = async (event: React.FormEvent<HTMLFormElement>) => {
+    event.preventDefault();
+    if (!targetUsername || !newSecretCode) {
+      setAdminMessage(translations[language].fieldsError);
+      setTimeout(() => setAdminMessage(''), 2000);
+      return;
+    }
+    setIsProcessing(true);
+    try {
+      const response = await axios.post(`${API_URL}/generate-code`, {
+        username: targetUsername,
+        secretCode: newSecretCode,
+      });
+      if (response.data.success) {
+        setAdminMessage('Secret code generated successfully');
+        setTimeout(() => {
+          setAdminMessage('');
+          setShowAdminForm(false);
+          setTargetUsername('');
+          setNewSecretCode('');
+        }, 2000);
+      } else {
+        setAdminMessage(response.data.message || 'Failed to generate secret code');
+        setTimeout(() => setAdminMessage(''), 2000);
+      }
+    } catch (error) {
+      console.error('Generate Code Error:', error);
+      setAdminMessage('Failed to generate secret code');
+      setTimeout(() => setAdminMessage(''), 2000);
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const handleResetPassword = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!loginUsername || !secretCode) {
@@ -264,7 +304,7 @@ function App() {
       setTimeout(() => setResetMessage(''), 2000);
       return;
     }
-  
+
     setIsProcessing(true);
     try {
       console.log('Attempting reset with:', { username: loginUsername, secretCode });
@@ -273,7 +313,7 @@ function App() {
         secretCode,
       });
       console.log('Reset response:', response.data);
-  
+
       if (response.data.success) {
         console.log('Reset successful, showing validation success');
         setShowResetPopup(false); // Close reset popup
@@ -487,6 +527,58 @@ function App() {
         >
           {translations[language].logoutButton}
         </button>
+      )}
+
+      {loggedIn && isAdmin && (
+        <button
+          onClick={() => setShowAdminForm(true)}
+          className="admin-button"
+          style={{ position: 'absolute', top: '20px', right: '150px' }}
+          disabled={isProcessing}
+        >
+          Admin
+        </button>
+      )}
+
+      {showAdminForm && (
+        <div className="admin-form">
+          <button
+            type="button"
+            className="close-button"
+            onClick={() => setShowAdminForm(false)}
+            disabled={isProcessing}
+            aria-label="Close admin form"
+          >
+            <i className="bi bi-x"></i>
+          </button>
+          <form onSubmit={handleGenerateCode}>
+            <p>Generate Secret Code for User</p>
+            <div>
+              <label>{translations[language].usernameLabel}</label>
+              <input
+                type="text"
+                value={targetUsername}
+                onChange={(e) => setTargetUsername(e.target.value)}
+                placeholder={translations[language].loginPlaceholder}
+                disabled={isProcessing}
+              />
+            </div>
+            <div>
+              <label>{translations[language].secretCodeLabel}</label>
+              <input
+                type="text"
+                value={newSecretCode}
+                onChange={(e) => setNewSecretCode(e.target.value)}
+                placeholder={translations[language].secretCodePlaceholder}
+                disabled={isProcessing}
+              />
+            </div>
+            <button type="submit" disabled={isProcessing}>
+              Generate
+            </button>
+            {adminMessage && <p className="error">{adminMessage}</p>}
+          </form>
+        </div>
       )}
     </div>
   );

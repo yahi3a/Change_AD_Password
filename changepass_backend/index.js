@@ -20,6 +20,7 @@ const adConfig = {
   username: process.env.AD_USERNAME,
   password: process.env.AD_PASSWORD,
   server: process.env.AD_SERVER,
+  adminGroup: process.env.ADMIN_GROUP, // Add admin group
 };
 
 const PENDING_FILE = path.join(__dirname, 'pending-azure-changes.json');
@@ -36,8 +37,8 @@ const asyncHandler = fn => (req, res, next) =>
   });
 
 const validateEnv = () => {
-  const required = ['AD_URL', 'AD_USERNAME', 'AD_PASSWORD', 'AD_SERVER'];
-  const missing = required.filter(key => !process.env[key]);
+  const required = ['AD_URL', 'AD_USERNAME', 'AD_PASSWORD', 'AD_SERVER', 'ADMIN_GROUP'];
+  const missing = required.filter(key => !process.env[key]);  
   if (missing.length) throw new Error(`Missing environment variables: ${missing.join(', ')}`);
 };
 
@@ -107,9 +108,11 @@ app.post('/api/login', asyncHandler(async (req, res) => {
   const findUserCommand = `
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8;
     ${getCredString(adConfig.username, adConfig.password)}
-    $user = Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName,DisplayName -ErrorAction Stop;
+    $user = Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName,DisplayName,MemberOf -ErrorAction Stop;
+    $adminGroup = Get-ADGroup -Identity '${adConfig.adminGroup}' -Server '${adConfig.server}' -Credential $cred -ErrorAction Stop;
+    $isAdmin = $user.MemberOf -contains $adminGroup.DistinguishedName;
     if ($user) {
-      $user | Select-Object -Property SamAccountName,UserPrincipalName,DisplayName | ConvertTo-Json -Compress
+      $user | Select-Object -Property SamAccountName,UserPrincipalName,DisplayName,@{Name='IsAdmin';Expression={$isAdmin}} | ConvertTo-Json -Compress
     } else {
       Write-Error 'User not found'
       exit 1
@@ -146,6 +149,7 @@ app.post('/api/login', asyncHandler(async (req, res) => {
       success: true,
       username: userData.SamAccountName || username,
       displayName: userData.DisplayName || username,
+      isAdmin: userData.IsAdmin || false, // Include isAdmin in response
     });
   } catch (error) {
     if (!IS_PRODUCTION) console.error('Login Error:', error.message);
@@ -228,6 +232,48 @@ app.post('/api/change-azure-password', asyncHandler(async (req, res) => {
       success: false,
       message: 'Azure AD password change failed. Will retry later.',
     });
+  }
+}));
+
+app.post('/api/generate-code', asyncHandler(async (req, res) => {
+  const { secretCode, username } = req.body;
+  if (!secretCode || !username) {
+    return res.status(400).json({ success: false, message: 'Secret code and username are required' });
+  }
+
+  try {
+    // Format the timestamp to yyyy-mm-dd hh:mm
+    const now = new Date();
+    const year = now.getFullYear();
+    const month = String(now.getMonth() + 1).padStart(2, '0'); // Months are 0-based
+    const day = String(now.getDate()).padStart(2, '0');
+    const hours = String(now.getHours()).padStart(2, '0');
+    const minutes = String(now.getMinutes()).padStart(2, '0');
+    const formattedDate = `${year}-${month}-${day} ${hours}:${minutes}`;
+
+    // Log to confirm formatting
+    console.log(`Generating secret code: ${secretCode} || ${username} || ${formattedDate}`);
+
+    // Create the new line
+    const newLine = `${secretCode} || ${username} || ${formattedDate}\n`;
+
+    // Append the new line, ensuring the file ends with a newline if it exists
+    let fileContent = '';
+    try {
+      fileContent = await fs.readFile(SECRET_CODE_FILE, 'utf8');
+    } catch (error) {
+      if (error.code !== 'ENOENT') throw error; // Ignore if file doesn't exist
+    }
+
+    if (fileContent && !fileContent.endsWith('\n')) {
+      await fs.appendFile(SECRET_CODE_FILE, '\n');
+    }
+
+    await fs.appendFile(SECRET_CODE_FILE, newLine);
+    res.json({ success: true, message: 'Secret code generated successfully' });
+  } catch (error) {
+    if (!IS_PRODUCTION) console.error('Generate Code Error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to generate secret code' });
   }
 }));
 

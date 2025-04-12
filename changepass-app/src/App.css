@@ -323,3 +323,86 @@ form p.warning {
   font-weight: bold;
   margin: 0;
 }
+
+.admin-button {
+  position: absolute;
+  top: 20px;
+  right: 150px;
+  padding: 7px 14px;
+  font-size: 13px;
+  background-color: rgba(22, 1, 126, 0.1);
+  color: #026aa7;
+  border: none;
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background-color 0.5s ease;
+}
+
+.admin-button:hover {
+  background-color: #026aa7;
+  color: #ffffff;
+}
+
+/* Admin Form */
+.admin-form {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background-color: rgba(252, 252, 252, 0.9);
+  padding: 20px;
+  border-radius: 12px;
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.5);
+  width: 90%;
+  max-width: 500px;
+  z-index: 1000;
+}
+
+.admin-form form {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 15px;
+  background-color: transparent;
+  box-shadow: none;
+}
+
+.admin-form p {
+  margin: 0;
+  color: #004d40;
+  font-size: 15px;
+  font-weight: 600;
+  text-align: center;
+}
+
+.admin-form button {
+  padding: 10px 20px;
+  font-size: 14px;
+}
+
+.admin-form .close-button {
+  position: absolute;
+  top: 11px;
+  right: 11px;
+  background: none;
+  border: none;
+  color: #000000;
+  font-size: 24px;
+  cursor: pointer;
+  padding: 0;
+  line-height: 1px;
+}
+
+.admin-form .close-button:hover {
+  color: #b71c1c;
+}
+
+.admin-form .close-button:focus {
+  outline: 1px solid #d32f2f;
+  color: #b71c1c;
+}
+
+.admin-form .close-button:disabled {
+  color: #44444480;
+  cursor: not-allowed;
+}
