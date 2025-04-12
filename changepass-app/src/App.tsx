@@ -77,7 +77,7 @@ function App() {
       newPasswordLabel: 'New Password: ',
       confirmLabel: 'Confirm: ',
       changePasswordButton: 'Change Password',
-      successMessage: 'Windows login password & Email/Office 365 account password changed successfully for user: ',
+      successMessage: 'The Windows login password and the password of Email/Office 365 changed successfully for user: ',
       matchError: 'Passwords do not match.',
       fieldsError: 'Please fill in all fields.',
       logoutButton: 'Logout',
@@ -106,7 +106,7 @@ function App() {
       newPasswordLabel: 'Mật khẩu mới: ',
       confirmLabel: 'Xác nhận: ',
       changePasswordButton: 'Đổi mật khẩu',
-      successMessage: 'Mật khẩu đăng nhập Windows và Mật khẩu tài khoản Email & Office 365 đã được thay đổi thành công cho người dùng: ',
+      successMessage: 'Mật khẩu đăng nhập Windows và Mật khẩu tài khoản Email/Office 365 đã được thay đổi thành công cho người dùng: ',
       matchError: 'Mật khẩu không khớp.',
       fieldsError: 'Vui lòng điền đầy đủ các mục.',
       logoutButton: 'Đăng xuất',
@@ -126,7 +126,8 @@ function App() {
     },
   };
 
-  const API_URL = 'http://localhost:3001/api';
+  const API_URL = 'http://localhost:3001/api'; // Use this line for development
+  // const API_URL = process.env.REACT_APP_API_URL || 'https://your-production-api-url.com/api'; // Use this line for production
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -303,12 +304,10 @@ function App() {
 
   useEffect(() => {
     if (passwordChanged) {
-      const timer = setTimeout(() => {
-        handleLogout();
-      }, 10000);
+      const timer = setTimeout(() => handleLogout(), 10000);
       return () => clearTimeout(timer);
     }
-  }, [passwordChanged]);
+  }, [passwordChanged, handleLogout]);
 
   return (
     <div className={`App ${isProcessing ? 'processing' : ''}`}>

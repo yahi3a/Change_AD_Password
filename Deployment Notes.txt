@@ -1,0 +1,174 @@
+BACKEND:
+Create a Windows Service with NSSM
+Open Command Prompt as Administrator:
+Navigate to your backend folder:
+
+cd C:\path\to\the\ChangeADpasswordApp\backend
+
+Install the Service:
+Run:
+
+nssm install changepass-backend
+
+A GUI window opens. Configure:
+Path: C:\Program Files\nodejs\node.exe (or wherever Node.js is installed, check with where node).
+
+Startup directory: C:\inetpub\ChangeADpasswordApp\backend.
+
+Arguments: index.js.
+
+Service name: changepass-backend (default).
+
+Click Install service.
+
+Start the Service:
+Run:
+
+nssm start changepass-backend
+
+Verify:
+Check:
+
+netstat -aon | findstr :3001
+
+Expected: TCP 0.0.0.0:3001 0.0.0.0:0 LISTENING <PID>.
+
+Open Services (services.msc) and confirm changepass-backend is running.
+
+--------------
+FRONTEND:
+Step 1: Verify Frontend Build
+    Confirm Build Folder:
+    Check:
+
+    dir C:\inetpub\ChangeADpasswordApp\frontend\build
+
+    Ensure it contains index.html, static, etc.
+
+    Rebuild (if Needed):
+    If there is no build folder:
+
+    cd C:\path\to\the\ChangeADpasswordApp\frontend
+    npm install
+    npm run build
+
+Step 2: Configure IIS Site
+    2.1 Verify or Create the Site
+        Open IIS Manager:
+        Start > inetmgr.
+
+        Check or Add Site:
+        Look under Sites for ChangePassword (or your site name).
+
+        If missing or incorrect:
+        Right-click Sites > Add Website:
+        Site Name: ChangePassword
+
+        Physical Path: C:\inetpub\ChangeADpasswordApp\frontend\build
+
+        Port: 80 (or your chosen port)
+
+        Host Name: Leave blank or set a domain (e.g., changepass.example.com if DNS is configured).
+
+        Click OK.
+
+    2.2 Configure URL Rewrite for SPA and API
+        Since you’re serving the frontend statically:
+        Open URL Rewrite:
+        Select ChangePassword site > Double-click URL Rewrite.
+
+        Add Rules:
+        Click Add Rule(s) > Blank rule > OK.
+
+        Rule 1: Proxy API to Backend:
+            Name: ReverseProxyToBackend
+
+            Pattern: ^api/(.*)
+
+            Action: Rewrite
+
+            Rewrite URL: http://localhost:3001/api/{R:1}
+
+            Stop Processing: Check
+
+        Rule 2: SPA Fallback to index.html:
+            Click Add Rule(s) > Blank rule > OK.
+
+            Name: SPA_Fallback
+
+            Pattern: ^(?!api/).*
+
+            Conditions: Add:
+            Input: {REQUEST_FILENAME}
+
+            Check if: Is not a file
+
+            Action: Rewrite
+
+            Rewrite URL: /index.html
+
+            Stop Processing: Check
+
+        Manual web.config (Alternative):
+        Edit C:\inetpub\ChangeADpasswordApp\frontend\build\web.config:
+
+        <?xml version="1.0" encoding="UTF-8"?>
+        <configuration>
+        <system.webServer>
+            <rewrite>
+            <rules>
+                <rule name="ReverseProxyToBackend" stopProcessing="true">
+                <match url="^api/(.*)" />
+                <action type="Rewrite" url="http://localhost:3001/api/{R:1}" />
+                </rule>
+                <rule name="SPA_Fallback" stopProcessing="true">
+                <match url="^(?!api/).*" />
+                <conditions>
+                    <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
+                </conditions>
+                <action type="Rewrite" url="/index.html" />
+                </rule>
+            </rules>
+            </rewrite>
+        </system.webServer>
+        </configuration>
+
+        Apply Changes:
+        Click Apply in IIS Manager.
+
+Step 3: Verify Backend Service
+Check NSSM Service:
+Run:
+
+nssm status changepass-backend
+
+Expected: SERVICE_RUNNING.
+
+Test Backend:
+Use a tool like Postman or curl:
+
+curl http://localhost:3001/api/login
+
+Expected: A response (even if an error, it confirms the backend is running).
+
+Step 4: Test the Deployment
+Restart IIS:
+Run:
+
+iisreset
+
+Open Browser:
+Navigate to http://localhost (or your server’s IP/domain).
+
+Test:
+Login page loads.
+
+Reset password (e.g., hungnt1, valid code) > Success message > Password change form.
+
+Invalid code keeps reset popup open.
+
+Check Client-Side Routing:
+Navigate to a route like http://localhost/reset (or any path).
+
+Expected: index.html loads, and React handles the route.
+

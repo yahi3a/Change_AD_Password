@@ -27,11 +27,12 @@ const SECRET_CODE_FILE = path.join(__dirname, 'secrets/reset_password.code');
 const PORT = process.env.PORT || 3001;
 const RETRY_INTERVAL = 300000; // 5 minutes
 const TWENTY_MINUTES = 20 * 60 * 1000; // 20 minutes in milliseconds
+const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 
 const asyncHandler = fn => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(error => {
-    console.error('Error:', error);
-    res.status(500).json({ success: false, message: 'INVALID_CODE_ERROR_04' });
+    if (!IS_PRODUCTION) console.error('Error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error occurred' });
   });
 
 const validateEnv = () => {
@@ -59,41 +60,86 @@ const initializeSecretCodeFile = async () => {
 
 const execPS = async (command) => {
   try {
-    const { stdout, stderr } = await exec(command, { 
+    const encodedCommand = Buffer.from(`
+      $ProgressPreference = 'SilentlyContinue';
+      If (-Not (Get-Module -ListAvailable -Name ActiveDirectory)) {
+        Write-Error 'ActiveDirectory module is not installed'
+        Exit 1
+      }
+      If (-Not (Get-Module -ListAvailable -Name MSOnline)) {
+        Write-Error 'MSOnline module is not installed'
+        Exit 1
+      }
+      Import-Module ActiveDirectory
+      Import-Module MSOnline
+      ${command}
+    `, 'utf16le').toString('base64');
+
+    const { stdout, stderr } = await exec(`powershell -EncodedCommand "${encodedCommand}"`, {
       encoding: 'utf8',
-      timeout: 30000 // 30-second timeout to prevent hanging
+      timeout: 30000,
+      maxBuffer: 1024 * 1024
     });
-    console.log('Raw stdout:', stdout);
-    console.log('Raw stderr:', stderr);
-    if (stderr && !stdout) throw new Error(stderr || 'PowerShell command failed without output');
-    return stdout;
+    if (stderr && !stdout) {
+      throw new Error('PowerShell execution failed');
+    }
+    if (!stdout.trim()) {
+      throw new Error('No output from PowerShell');
+    }
+    return stdout.trim();
   } catch (error) {
-    console.error('ExecPS Error:', error.message);
-    throw new Error(error.message || 'Unknown PowerShell execution error');
+    if (!IS_PRODUCTION) console.error('ExecPS Error:', error.message);
+    throw error;
   }
 };
 
-const getCredString = (username, password) =>
-  `$cred = New-Object System.Management.Automation.PSCredential('${username}', (ConvertTo-SecureString '${password}' -AsPlainText -Force));`;
+const getCredString = (username, password) => {
+  const escapedPassword = password.replace(/'/g, "''").replace(/"/g, '""');
+  return `$cred = New-Object System.Management.Automation.PSCredential('${username}', (ConvertTo-SecureString '${escapedPassword}' -AsPlainText -Force));`;
+};
 
 app.post('/api/login', asyncHandler(async (req, res) => {
   const { username, password } = req.body;
   if (!username || !password) {
-    console.log('Missing username or password:', { username, password });
-    return res.status(400).json({ success: false, message: 'Username and password required' });
+    return res.status(400).json({ success: false, message: 'Username and password are required' });
   }
 
-  const findUserCommand = `powershell -Command "& {[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${getCredString(adConfig.username, adConfig.password)} Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName,DisplayName | Select-Object -Property SamAccountName,UserPrincipalName,DisplayName | ConvertTo-Json -Compress | Out-String}"`;
+  const findUserCommand = `
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8;
+    ${getCredString(adConfig.username, adConfig.password)}
+    $user = Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName,DisplayName -ErrorAction Stop;
+    if ($user) {
+      $user | Select-Object -Property SamAccountName,UserPrincipalName,DisplayName | ConvertTo-Json -Compress
+    } else {
+      Write-Error 'User not found'
+      exit 1
+    }
+  `;
   try {
     const findStdout = await execPS(findUserCommand);
-    const userData = JSON.parse(findStdout);
-    console.log('Found user data:', userData);
+    let userData;
+    try {
+      userData = JSON.parse(findStdout);
+    } catch (parseError) {
+      if (!IS_PRODUCTION) console.error('JSON Parse Error:', parseError.message);
+      throw new Error('Invalid user data');
+    }
     if (!userData.UserPrincipalName) {
-      throw new Error('User not found in AD');
+      throw new Error('UserPrincipalName missing');
     }
     const fullUPN = userData.UserPrincipalName;
 
-    const authCommand = `powershell -Command "& {[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${getCredString(fullUPN, password)} Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred | Out-String}"`;
+    const authCommand = `
+      [Console]::OutputEncoding = [System.Text.Encoding]::UTF8;
+      ${getCredString(fullUPN, password)}
+      $user = Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -ErrorAction Stop;
+      if ($user) {
+        'Authentication successful'
+      } else {
+        Write-Error 'Authentication failed'
+        exit 1
+      }
+    `;
     await execPS(authCommand);
 
     res.json({
@@ -102,7 +148,7 @@ app.post('/api/login', asyncHandler(async (req, res) => {
       displayName: userData.DisplayName || username,
     });
   } catch (error) {
-    console.error('Login Error Details:', error.message);
+    if (!IS_PRODUCTION) console.error('Login Error:', error.message);
     res.status(401).json({ success: false, message: 'Invalid username or password' });
   }
 }));
@@ -114,41 +160,73 @@ app.post('/api/logout', (req, res) => {
 app.post('/api/change-ad-password', asyncHandler(async (req, res) => {
   const { username, newPassword } = req.body;
   if (!username || !newPassword) {
-    return res.status(400).json({ success: false, message: 'Username and new password required' });
+    return res.status(400).json({ success: false, message: 'Username and new password are required' });
   }
-  console.log('Attempting to change AD password for:', username);
-  const command = `powershell -Command "${getCredString(adConfig.username, adConfig.password)} Set-ADAccountPassword -Identity '${username}' -NewPassword (ConvertTo-SecureString '${newPassword}' -AsPlainText -Force) -Server '${adConfig.server}' -Credential $cred"`;
-  console.log('Executing command:', command);
+
+  const command = `
+    ${getCredString(adConfig.username, adConfig.password)}
+    Set-ADAccountPassword -Identity '${username}' -NewPassword (ConvertTo-SecureString '${newPassword}' -AsPlainText -Force) -Server '${adConfig.server}' -Credential $cred -ErrorAction Stop;
+    'Password changed successfully'
+  `;
   try {
-    const result = await execPS(command);
-    console.log('Password change result:', result);
+    await execPS(command);
     res.json({ success: true, message: 'AD password changed successfully' });
   } catch (error) {
-    console.error('Password change failed:', error);
-    res.status(500).json({ success: false, message: error.message || 'Failed to change AD password' });
+    if (!IS_PRODUCTION) console.error('AD Password Change Error:', error.message);
+    res.status(500).json({ success: false, message: 'Failed to change AD password' });
   }
 }));
 
 app.post('/api/change-azure-password', asyncHandler(async (req, res) => {
   const { username, newPassword } = req.body;
   if (!username || !newPassword) {
-    return res.status(400).json({ success: false, message: 'Username and new password required' });
+    return res.status(400).json({ success: false, message: 'Username and new password are required' });
   }
 
-  const findUserCommand = `powershell -Command "& {[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${getCredString(adConfig.username, adConfig.password)} Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName | Select-Object -Property UserPrincipalName | ConvertTo-Json -Compress | Out-String}"`;
-  const findStdout = await execPS(findUserCommand);
-  const userData = JSON.parse(findStdout);
-  const azureUsername = userData.UserPrincipalName;
+  const findUserCommand = `
+    [Console]::OutputEncoding = [System.Text.Encoding]::UTF8;
+    ${getCredString(adConfig.username, adConfig.password)}
+    $user = Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName -ErrorAction Stop;
+    if ($user) {
+      $user | Select-Object -Property UserPrincipalName | ConvertTo-Json -Compress
+    } else {
+      Write-Error 'User not found'
+      exit 1
+    }
+  `;
+  let userData;
+  try {
+    const findStdout = await execPS(findUserCommand);
+    try {
+      userData = JSON.parse(findStdout);
+    } catch (parseError) {
+      if (!IS_PRODUCTION) console.error('JSON Parse Error:', parseError.message);
+      throw new Error('Invalid user data');
+    }
+    if (!userData.UserPrincipalName) {
+      throw new Error('UserPrincipalName missing');
+    }
+  } catch (error) {
+    if (!IS_PRODUCTION) console.error('Find User Error:', error.message);
+    throw error;
+  }
 
-  const command = `powershell -Command "${getCredString(adConfig.username, adConfig.password)} Connect-MsolService -Credential $cred; Set-MsolUserPassword -UserPrincipalName '${azureUsername}' -NewPassword '${newPassword}' -ForceChangePassword $false"`;
+  const azureUsername = userData.UserPrincipalName;
+  const command = `
+    ${getCredString(adConfig.username, adConfig.password)}
+    Connect-MsolService -Credential $cred -ErrorAction Stop;
+    Set-MsolUserPassword -UserPrincipalName '${azureUsername}' -NewPassword '${newPassword}' -ForceChangePassword $false -ErrorAction Stop | Out-Null;
+    'Azure password changed successfully'
+  `;
   try {
     await execPS(command);
     res.json({ success: true, message: 'Azure AD password changed successfully' });
   } catch (error) {
+    if (!IS_PRODUCTION) console.error('Azure Password Change Error:', error.message);
     await storePendingChange(username, newPassword);
     res.status(500).json({
       success: false,
-      message: `Azure AD password change failed. Will retry later. Details: ${error.message}`,
+      message: 'Azure AD password change failed. Will retry later.',
     });
   }
 }));
@@ -157,8 +235,7 @@ app.post('/api/reset-password', asyncHandler(async (req, res) => {
   const { username, secretCode } = req.body;
 
   if (!username || !secretCode) {
-    console.log('Missing username or secret code:', { username, secretCode });
-    return res.status(400).json({ success: false, message: 'INVALID_CODE_ERROR_02' });
+    return res.status(400).json({ success: false, message: 'Username and secret code are required' });
   }
 
   try {
@@ -168,7 +245,6 @@ app.post('/api/reset-password', asyncHandler(async (req, res) => {
     const now = new Date();
     const TWENTY_MINUTES_MS = 20 * 60 * 1000;
 
-    // First pass: Check and mark expired lines
     for (let i = 0; i < lines.length; i++) {
       const line = lines[i];
       if (line.startsWith('#EXPIRED#') || line.startsWith('#VALIDATED#')) continue;
@@ -176,24 +252,22 @@ app.post('/api/reset-password', asyncHandler(async (req, res) => {
       const [storedCode, storedUsername, timeStr] = line.split(' || ').map(part => part.trim());
       if (!storedCode || !storedUsername || !timeStr) continue;
 
-      const storedDate = new Date(timeStr); // Assuming updated format with date
+      const storedDate = new Date(timeStr);
       if (isNaN(storedDate.getTime())) {
-        console.log('Invalid date-time format in line:', line);
+        if (!IS_PRODUCTION) console.warn('Invalid date-time format in line:', line);
         continue;
       }
 
       const timeDiffMs = now - storedDate;
       if (timeDiffMs > TWENTY_MINUTES_MS || timeDiffMs < 0) {
         updatedLines[i] = `#EXPIRED# ${line}`;
-        console.log('Marked as expired:', line);
+        if (!IS_PRODUCTION) console.log('Marked as expired:', line);
       }
     }
 
-    // Write back expired updates
     await fs.writeFile(SECRET_CODE_FILE, updatedLines.join('\n'), 'utf8');
-    console.log('Updated reset_password.code with expired entries:', updatedLines);
+    if (!IS_PRODUCTION) console.log('Updated reset_password.code with expired entries');
 
-    // Second pass: Check for a match among non-expired lines
     let foundMatch = false;
     let matchIndex = -1;
 
@@ -212,14 +286,12 @@ app.post('/api/reset-password', asyncHandler(async (req, res) => {
     }
 
     if (!foundMatch) {
-      console.log('No valid match found for:', { username, secretCode });
-      return res.status(401).json({ success: false, message: 'INVALID_CODE_ERROR_03' });
+      return res.status(401).json({ success: false, message: 'Invalid secret code' });
     }
 
-    // Mark the successful match as validated
     updatedLines[matchIndex] = `#VALIDATED# ${lines[matchIndex]}`;
     await fs.writeFile(SECRET_CODE_FILE, updatedLines.join('\n'), 'utf8');
-    console.log('Validated match:', lines[matchIndex]);
+    if (!IS_PRODUCTION) console.log('Validated secret code');
 
     res.json({
       success: true,
@@ -227,44 +299,80 @@ app.post('/api/reset-password', asyncHandler(async (req, res) => {
       displayName: username,
     });
   } catch (error) {
-    console.error('Reset Password Error:', error.message);
-    res.status(500).json({ success: false, message: 'INVALID_CODE_ERROR_04' });
+    if (!IS_PRODUCTION) console.error('Reset Password Error:', error.message);
+    res.status(500).json({ success: false, message: 'Server error occurred' });
   }
 }));
 
 const storePendingChange = async (username, newPassword) => {
-  const pending = await getPendingChanges();
-  pending.push({ username, newPassword, timestamp: Date.now() });
-  await fs.writeFile(PENDING_FILE, JSON.stringify(pending, null, 2));
+  try {
+    const pending = await getPendingChanges();
+    pending.push({ username, newPassword, timestamp: Date.now() });
+    await fs.writeFile(PENDING_FILE, JSON.stringify(pending, null, 2));
+  } catch (error) {
+    if (!IS_PRODUCTION) console.error('Store Pending Change Error:', error.message);
+  }
 };
 
 const getPendingChanges = async () => {
-  const data = await fs.readFile(PENDING_FILE, 'utf8');
-  return JSON.parse(data);
+  try {
+    const data = await fs.readFile(PENDING_FILE, 'utf8');
+    return JSON.parse(data);
+  } catch (error) {
+    if (!IS_PRODUCTION) console.error('Get Pending Changes Error:', error.message);
+    return [];
+  }
 };
 
 const retryPendingChanges = async () => {
-  const pending = await getPendingChanges();
-  if (!pending.length) return;
-  console.log('Retrying pending Azure AD changes...');
-  const updatedPending = [];
+  try {
+    const pending = await getPendingChanges();
+    if (!pending.length) return;
+    const updatedPending = [];
 
-  for (const { username, newPassword } of pending) {
-    const findUserCommand = `powershell -Command "& {[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${getCredString(adConfig.username, adConfig.password)} Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName | Select-Object -Property UserPrincipalName | ConvertTo-Json -Compress | Out-String}"`;
-    try {
-      const findStdout = await execPS(findUserCommand);
-      const userData = JSON.parse(findStdout);
-      const azureUsername = userData.UserPrincipalName;
+    for (const { username, newPassword } of pending) {
+      const findUserCommand = `
+        [Console]::OutputEncoding = [System.Text.Encoding]::UTF8;
+        ${getCredString(adConfig.username, adConfig.password)}
+        $user = Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName -ErrorAction Stop;
+        if ($user) {
+          $user | Select-Object -Property UserPrincipalName | ConvertTo-Json -Compress
+        } else {
+          Write-Error 'User not found'
+          exit 1
+        }
+      `;
+      try {
+        const findStdout = await execPS(findUserCommand);
+        let userData;
+        try {
+          userData = JSON.parse(findStdout);
+        } catch (parseError) {
+          if (!IS_PRODUCTION) console.error('JSON Parse Error:', parseError.message);
+          throw new Error('Invalid user data');
+        }
+        const azureUsername = userData.UserPrincipalName;
+        if (!azureUsername) {
+          throw new Error('UserPrincipalName missing');
+        }
 
-      const command = `powershell -Command "${getCredString(adConfig.username, adConfig.password)} Connect-MsolService -Credential $cred; Set-MsolUserPassword -UserPrincipalName '${azureUsername}' -NewPassword '${newPassword}' -ForceChangePassword $false"`;
-      await execPS(command);
-      console.log(`Retry succeeded for ${username}`);
-    } catch (error) {
-      console.error(`Retry failed for ${username}:`, error.message);
-      updatedPending.push({ username, newPassword, timestamp: Date.now() });
+        const command = `
+          ${getCredString(adConfig.username, adConfig.password)}
+          Connect-MsolService -Credential $cred -ErrorAction Stop;
+          Set-MsolUserPassword -UserPrincipalName '${azureUsername}' -NewPassword '${newPassword}' -ForceChangePassword $false -ErrorAction Stop | Out-Null;
+          'Azure password changed successfully'
+        `;
+        await execPS(command);
+        if (!IS_PRODUCTION) console.log(`Retry succeeded for ${username}`);
+      } catch (error) {
+        if (!IS_PRODUCTION) console.error(`Retry failed for ${username}:`, error.message);
+        updatedPending.push({ username, newPassword, timestamp: Date.now() });
+      }
     }
+    await fs.writeFile(PENDING_FILE, JSON.stringify(updatedPending, null, 2));
+  } catch (error) {
+    if (!IS_PRODUCTION) console.error('Retry Pending Changes Error:', error.message);
   }
-  await fs.writeFile(PENDING_FILE, JSON.stringify(updatedPending, null, 2));
 };
 
 const startServer = async () => {
@@ -274,7 +382,7 @@ const startServer = async () => {
     await initializeSecretCodeFile();
     setInterval(retryPendingChanges, RETRY_INTERVAL);
     app.listen(PORT, () => {
-      console.log(`Server running on port ${PORT}`);
+      console.log(`Server running on port ${PORT} in ${IS_PRODUCTION ? 'production' : 'development'} mode`);
     });
   } catch (error) {
     console.error('Startup failed:', error.message);
