@@ -28,9 +28,6 @@ const PORT = process.env.PORT || 3001;
 const RETRY_INTERVAL = 300000; // 5 minutes
 const TWENTY_MINUTES = 20 * 60 * 1000; // 20 minutes in milliseconds
 
-// In-memory store for login passwords (username -> password mapping)
-const userPasswords = new Map();
-
 const asyncHandler = fn => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(error => {
     console.error('Error:', error);
@@ -99,10 +96,6 @@ app.post('/api/login', asyncHandler(async (req, res) => {
     const authCommand = `powershell -Command "& {[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; ${getCredString(fullUPN, password)} Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred | Out-String}"`;
     await execPS(authCommand);
 
-    // Store the login password in memory
-    userPasswords.set(username, password);
-    console.log(`Stored login password for ${username}`);
-
     res.json({
       success: true,
       username: userData.SamAccountName || username,
@@ -115,12 +108,6 @@ app.post('/api/login', asyncHandler(async (req, res) => {
 }));
 
 app.post('/api/logout', (req, res) => {
-  // Clear the stored password on logout
-  const { username } = req.body; // Assume username is sent in logout request
-  if (username && userPasswords.has(username)) {
-    userPasswords.delete(username);
-    console.log(`Cleared stored password for ${username}`);
-  }
   res.json({ success: true, message: 'Logged out successfully' });
 });
 
@@ -129,18 +116,9 @@ app.post('/api/change-ad-password', asyncHandler(async (req, res) => {
   if (!username || !newPassword) {
     return res.status(400).json({ success: false, message: 'Username and new password required' });
   }
-
-  // Retrieve the old password from the in-memory store
-  const oldPassword = userPasswords.get(username);
-  if (!oldPassword) {
-    return res.status(400).json({ success: false, message: 'No login password available. Please log in again.' });
-  }
-
   console.log('Attempting to change AD password for:', username);
-  // Use -OldPassword with the stored login password
-  const command = `powershell -Command "${getCredString(adConfig.username, adConfig.password)} Set-ADAccountPassword -Identity '${username}' -OldPassword (ConvertTo-SecureString '${oldPassword}' -AsPlainText -Force) -NewPassword (ConvertTo-SecureString '${newPassword}' -AsPlainText -Force) -Server '${adConfig.server}' -Credential $cred"`;
+  const command = `powershell -Command "${getCredString(adConfig.username, adConfig.password)} Set-ADAccountPassword -Identity '${username}' -NewPassword (ConvertTo-SecureString '${newPassword}' -AsPlainText -Force) -Server '${adConfig.server}' -Credential $cred"`;
   console.log('Executing command:', command);
-
   try {
     const result = await execPS(command);
     console.log('Password change result:', result);
