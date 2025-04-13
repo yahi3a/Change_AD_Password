@@ -359,6 +359,7 @@ app.post('/api/reset-password', asyncHandler(async (req, res) => {
       success: true,
       username,
       displayName: username,
+      isAdmin: false, // Explicitly indicate non-admin status
     });
   } catch (error) {
     if (!IS_PRODUCTION) console.error('Reset Password Error:', error.message);

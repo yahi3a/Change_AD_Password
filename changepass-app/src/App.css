@@ -290,7 +290,7 @@ form p.warning {
 
 .admin-form {
   position: fixed;
-  top: 50%;
+  top: 40%;
   left: 50%;
   transform: translate(-50%, -50%);
   background-color: rgba(252, 252, 252, 0.9);
@@ -402,4 +402,15 @@ form p.warning {
   display: flex;
   justify-content: center;
   
+}
+
+.credit {
+  position: fixed;
+  align: center;
+  bottom: 10px;
+  font-family: 'Montserrat', 'Roboto', sans-serif;
+  font-size: 12px;
+  color: #000000; /* Matches label color for consistency */
+  opacity: 0.7; /* Slightly transparent to be unobtrusive */
+  z-index: 1200; /* Higher than admin-form (1000) and top-right-buttons (1100) */
 }

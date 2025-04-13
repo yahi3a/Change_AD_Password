@@ -135,7 +135,7 @@ function App() {
       passwordRequirement: 'Mật khẩu dài tối thiểu 11 ký tự và chứa ít nhất ba trong bốn yếu tố sau: chữ viết hoa, chữ viết thường, số và ký tự đặc biệt. Ngoài ra, KHÔNG ĐƯỢC bao gồm TÊN NGƯỜI DÙNG của bạn.',
       azurePendingWarning: 'Mật khẩu đăng nhập Windows đã được thay đổi, nhưng Mật khẩu tài khoản Email & Office 365 có thể mất tới 24 giờ để cập nhật. Vui lòng thử lại sau.',
       forgotPassword: 'Bạn quên mật khẩu?',
-      resetInstructions: 'Vui lòng liên hệ quản trị viên hệ thống - BCNTT để nhận mã xác thực bí mật nhằm đặt lại mật khẩu của bạn. Mã này chỉ có hiệu lực trong 20 phút.',
+      resetInstructions: 'Vui lòng liên hệ quản trị viên hệ thống - BCNTT để nhận mã xác thực bí mật nhằm đặt lại mật khẩu của bạn. Lưu ý Mã này chỉ có hiệu lực trong 20 phút.',
       secretCodeLabel: 'Mã xác thực: ',
       secretCodePlaceholder: 'Nhập chuỗi xác thực bí mật được IT cung cấp',
       submitCodeButton: 'Xác nhận mã',
@@ -284,6 +284,11 @@ function App() {
         setDisplayName('');
         setMessage(null);
         setPasswordChanged(false);
+        setIsAdmin(false); // Reset admin status
+        setShowAdminForm(false); // Close admin form
+        setTargetUsername(''); // Clear admin form inputs
+        setNewSecretCode('');
+        setAdminMessage(null);
       })
       .catch((error) => {
         console.error('Logout Error:', error);
@@ -350,6 +355,7 @@ function App() {
         setSecretCode('');
         setUsername(response.data.username);
         setDisplayName(response.data.displayName || response.data.username);
+        setIsAdmin(response.data.isAdmin || false); // Use backend's isAdmin value
         setTimeout(() => {
           setShowValidationSuccess(false);
           setLoggedIn(true);
@@ -430,67 +436,67 @@ function App() {
                 {resetMessage && <p className="error">{resetMessage}</p>}
               </form>
             </div>
-            ) : (
-              <>
-                <form onSubmit={handleLogin}>
-                  <div>
-                    <label>{translations[language].loginUsernameLabel}</label>
-                    <input
-                      type="text"
-                      value={loginUsername}
-                      onChange={(e) => setLoginUsername(e.target.value)}
-                      placeholder={translations[language].loginPlaceholder}
-                      disabled={isProcessing}
-                    />
-                  </div>
-                  <div>
-                    <label>{translations[language].loginPasswordLabel}</label>
-                    <input
-                      type={showLoginPassword ? 'text' : 'password'}
-                      value={loginPassword}
-                      onChange={(e) => setLoginPassword(e.target.value)}
-                      placeholder={translations[language].passwordPlaceholder}
-                      disabled={isProcessing}
-                    />
-                    <button
-                      type="button"
-                      className="show-password"
-                      onClick={() => setShowLoginPassword(!showLoginPassword)}
-                      disabled={isProcessing}
-                      aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
-                    >
-                      <i className={showLoginPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
-                    </button>
-                  </div>
-                  <a
-                    href="#"
-                    className="forgot-password"
-                    onClick={(e) => {
-                      e.preventDefault();
-                      setShowResetPopup(true);
-                    }}
-                  >
-                    {translations[language].forgotPassword}
-                  </a>
-                  <button type="submit" disabled={isProcessing}>
-                    {translations[language].loginButton}
-                  </button>
-                  <p className="error">{loginMessage}</p>
-                </form>
-                <div className="turnstile-container">
-                  <Turnstile
-                    siteKey={TURNSTILE_SITE_KEY}
-                    onSuccess={(token) => setTurnstileToken(token)}
-                    onError={() => setTurnstileToken(null)}
-                    onExpire={() => setTurnstileToken(null)}
-                    options={{
-                      theme: 'light',
-                      size: 'flexible',
-                    }}
+          ) : (
+            <>
+              <form onSubmit={handleLogin}>
+                <div>
+                  <label>{translations[language].loginUsernameLabel}</label>
+                  <input
+                    type="text"
+                    value={loginUsername}
+                    onChange={(e) => setLoginUsername(e.target.value)}
+                    placeholder={translations[language].loginPlaceholder}
+                    disabled={isProcessing}
                   />
                 </div>
-              </>
-            )
+                <div>
+                  <label>{translations[language].loginPasswordLabel}</label>
+                  <input
+                    type={showLoginPassword ? 'text' : 'password'}
+                    value={loginPassword}
+                    onChange={(e) => setLoginPassword(e.target.value)}
+                    placeholder={translations[language].passwordPlaceholder}
+                    disabled={isProcessing}
+                  />
+                  <button
+                    type="button"
+                    className="show-password"
+                    onClick={() => setShowLoginPassword(!showLoginPassword)}
+                    disabled={isProcessing}
+                    aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                  >
+                    <i className={showLoginPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
+                  </button>
+                </div>
+                <a
+                  href="#"
+                  className="forgot-password"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setShowResetPopup(true);
+                  }}
+                >
+                  {translations[language].forgotPassword}
+                </a>
+                <button type="submit" disabled={isProcessing}>
+                  {translations[language].loginButton}
+                </button>
+                <p className="error">{loginMessage}</p>
+              </form>
+              <div className="turnstile-container">
+                <Turnstile
+                  siteKey={TURNSTILE_SITE_KEY}
+                  onSuccess={(token) => setTurnstileToken(token)}
+                  onError={() => setTurnstileToken(null)}
+                  onExpire={() => setTurnstileToken(null)}
+                  options={{
+                    theme: 'light',
+                    size: 'flexible',
+                  }}
+                />
+              </div>
+            </>
+          )
         ) : (
           !showAdminForm && (
             <form onSubmit={handleSubmit}>
@@ -621,8 +627,11 @@ function App() {
           </form>
         </div>
       )}
+      <div className="credit">
+        Created by Nguyễn Trần Hưng
+      </div>
     </div>
-    
+
   );
 }
 
