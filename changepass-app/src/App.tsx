@@ -1,6 +1,7 @@
 import 'bootstrap-icons/font/bootstrap-icons.css';
 import React, { useState, useEffect } from 'react';
 import axios, { AxiosError } from 'axios';
+import { Turnstile } from '@marsidev/react-turnstile';
 import './App.css';
 
 interface Translation {
@@ -35,7 +36,8 @@ interface Translation {
   adminFormTitle: string;
   adminSuccessMessage: string;
   adminErrorMessage: string;
-  generateButton: string; // Added for Generate button
+  generateButton: string;
+  captchaError: string;
 }
 
 interface Translations {
@@ -73,6 +75,7 @@ function App() {
   const [targetUsername, setTargetUsername] = useState<string>('');
   const [newSecretCode, setNewSecretCode] = useState<string>('');
   const [adminMessage, setAdminMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
+  const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
 
   const translations: Translations = {
     en: {
@@ -108,6 +111,7 @@ function App() {
       adminSuccessMessage: 'Secret code generated successfully',
       adminErrorMessage: 'Failed to generate secret code',
       generateButton: 'Generate',
+      captchaError: 'Please complete the CAPTCHA verification.',
     },
     vi: {
       title: 'GELEXIMCO - QUẢN LÝ TÀI KHOẢN',
@@ -142,19 +146,28 @@ function App() {
       adminSuccessMessage: 'Mã xác thực được khởi tạo thành công',
       adminErrorMessage: 'Không thể tạo mã xác thực',
       generateButton: 'Khởi Tạo',
+      captchaError: 'Vui lòng hoàn thành xác minh CAPTCHA.',
     },
   };
 
   const API_URL = 'http://localhost:3001/api'; // Use this line for development
   // const API_URL = process.env.REACT_APP_API_URL || 'https://your-production-api-url.com/api'; // Use this line for production
+  const TURNSTILE_SITE_KEY = '0x4AAAAAABK9_sE3dvA8dmId'; // Replace with your site key
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setIsProcessing(true);
+    if (!turnstileToken) {
+      setLoginMessage(translations[language].captchaError);
+      setTimeout(() => setLoginMessage(''), 2000);
+      setIsProcessing(false);
+      return;
+    }
     try {
       const response = await axios.post(`${API_URL}/login`, {
         username: loginUsername,
         password: loginPassword,
+        turnstileToken,
       });
       console.log('Login response from backend:', response.data);
       if (response.data.success) {
@@ -166,13 +179,15 @@ function App() {
         setLoginMessage('');
         setLoginUsername('');
         setLoginPassword('');
+        setTurnstileToken(null);
       } else {
         setLoginMessage(translations[language].loginError);
         setTimeout(() => setLoginMessage(''), 2000);
       }
     } catch (error) {
-      console.error('Login Error:', error);
-      setLoginMessage(translations[language].loginError);
+      const axiosError = error as AxiosError<ErrorResponse>;
+      console.error('Login Error:', axiosError.response ? axiosError.response.data : axiosError.message);
+      setLoginMessage(axiosError.response?.data?.message || translations[language].loginError);
       setTimeout(() => setLoginMessage(''), 2000);
     } finally {
       setIsProcessing(false);
@@ -415,53 +430,67 @@ function App() {
                 {resetMessage && <p className="error">{resetMessage}</p>}
               </form>
             </div>
-          ) : (
-            <form onSubmit={handleLogin}>
-              <div>
-                <label>{translations[language].loginUsernameLabel}</label>
-                <input
-                  type="text"
-                  value={loginUsername}
-                  onChange={(e) => setLoginUsername(e.target.value)}
-                  placeholder={translations[language].loginPlaceholder}
-                  disabled={isProcessing}
-                />
-              </div>
-              <div>
-                <label>{translations[language].loginPasswordLabel}</label>
-                <input
-                  type={showLoginPassword ? 'text' : 'password'}
-                  value={loginPassword}
-                  onChange={(e) => setLoginPassword(e.target.value)}
-                  placeholder={translations[language].passwordPlaceholder}
-                  disabled={isProcessing}
-                />
-                <button
-                  type="button"
-                  className="show-password"
-                  onClick={() => setShowLoginPassword(!showLoginPassword)}
-                  disabled={isProcessing}
-                  aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
-                >
-                  <i className={showLoginPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
-                </button>
-              </div>
-              <a
-                href="#"
-                className="forgot-password"
-                onClick={(e) => {
-                  e.preventDefault();
-                  setShowResetPopup(true);
-                }}
-              >
-                {translations[language].forgotPassword}
-              </a>
-              <button type="submit" disabled={isProcessing}>
-                {translations[language].loginButton}
-              </button>
-              <p className="error">{loginMessage}</p>
-            </form>
-          )
+            ) : (
+              <>
+                <form onSubmit={handleLogin}>
+                  <div>
+                    <label>{translations[language].loginUsernameLabel}</label>
+                    <input
+                      type="text"
+                      value={loginUsername}
+                      onChange={(e) => setLoginUsername(e.target.value)}
+                      placeholder={translations[language].loginPlaceholder}
+                      disabled={isProcessing}
+                    />
+                  </div>
+                  <div>
+                    <label>{translations[language].loginPasswordLabel}</label>
+                    <input
+                      type={showLoginPassword ? 'text' : 'password'}
+                      value={loginPassword}
+                      onChange={(e) => setLoginPassword(e.target.value)}
+                      placeholder={translations[language].passwordPlaceholder}
+                      disabled={isProcessing}
+                    />
+                    <button
+                      type="button"
+                      className="show-password"
+                      onClick={() => setShowLoginPassword(!showLoginPassword)}
+                      disabled={isProcessing}
+                      aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                    >
+                      <i className={showLoginPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
+                    </button>
+                  </div>
+                  <a
+                    href="#"
+                    className="forgot-password"
+                    onClick={(e) => {
+                      e.preventDefault();
+                      setShowResetPopup(true);
+                    }}
+                  >
+                    {translations[language].forgotPassword}
+                  </a>
+                  <button type="submit" disabled={isProcessing}>
+                    {translations[language].loginButton}
+                  </button>
+                  <p className="error">{loginMessage}</p>
+                </form>
+                <div className="turnstile-container">
+                  <Turnstile
+                    siteKey={TURNSTILE_SITE_KEY}
+                    onSuccess={(token) => setTurnstileToken(token)}
+                    onError={() => setTurnstileToken(null)}
+                    onExpire={() => setTurnstileToken(null)}
+                    options={{
+                      theme: 'light',
+                      size: 'flexible',
+                    }}
+                  />
+                </div>
+              </>
+            )
         ) : (
           !showAdminForm && (
             <form onSubmit={handleSubmit}>
@@ -593,6 +622,7 @@ function App() {
         </div>
       )}
     </div>
+    
   );
 }
 

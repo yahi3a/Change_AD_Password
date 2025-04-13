@@ -5,6 +5,7 @@ const { promisify } = require('util');
 const exec = promisify(require('child_process').exec);
 const fs = require('fs').promises;
 const path = require('path');
+const axios = require('axios');
 require('dotenv').config();
 
 const app = express();
@@ -20,7 +21,7 @@ const adConfig = {
   username: process.env.AD_USERNAME,
   password: process.env.AD_PASSWORD,
   server: process.env.AD_SERVER,
-  adminGroup: process.env.ADMIN_GROUP, // Add admin group
+  adminGroup: process.env.ADMIN_GROUP,
 };
 
 const PENDING_FILE = path.join(__dirname, 'pending-azure-changes.json');
@@ -29,6 +30,7 @@ const PORT = process.env.PORT || 3001;
 const RETRY_INTERVAL = 300000; // 5 minutes
 const TWENTY_MINUTES = 20 * 60 * 1000; // 20 minutes in milliseconds
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
+const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY;
 
 const asyncHandler = fn => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(error => {
@@ -37,9 +39,22 @@ const asyncHandler = fn => (req, res, next) =>
   });
 
 const validateEnv = () => {
-  const required = ['AD_URL', 'AD_USERNAME', 'AD_PASSWORD', 'AD_SERVER', 'ADMIN_GROUP'];
-  const missing = required.filter(key => !process.env[key]);  
+  const required = ['AD_URL', 'AD_USERNAME', 'AD_PASSWORD', 'AD_SERVER', 'ADMIN_GROUP', 'TURNSTILE_SECRET_KEY'];
+  const missing = required.filter(key => !process.env[key]);
   if (missing.length) throw new Error(`Missing environment variables: ${missing.join(', ')}`);
+};
+
+const verifyTurnstileToken = async (token) => {
+  try {
+    const response = await axios.post('https://challenges.cloudflare.com/turnstile/v0/siteverify', {
+      secret: TURNSTILE_SECRET_KEY,
+      response: token,
+    });
+    return response.data.success;
+  } catch (error) {
+    if (!IS_PRODUCTION) console.error('Turnstile Verification Error:', error.message);
+    return false;
+  }
 };
 
 const initializePendingFile = async () => {
@@ -55,7 +70,7 @@ const initializeSecretCodeFile = async () => {
     await fs.access(SECRET_CODE_FILE);
   } catch {
     await fs.mkdir(path.dirname(SECRET_CODE_FILE), { recursive: true });
-    await fs.writeFile(SECRET_CODE_FILE, JSON.stringify({ code: 'default123', timestamp: Date.now() }));
+    await fs.writeFile(SECRET_CODE_FILE, ''); // Initialize as empty text file
   }
 };
 
@@ -100,9 +115,14 @@ const getCredString = (username, password) => {
 };
 
 app.post('/api/login', asyncHandler(async (req, res) => {
-  const { username, password } = req.body;
-  if (!username || !password) {
-    return res.status(400).json({ success: false, message: 'Username and password are required' });
+  const { username, password, turnstileToken } = req.body;
+  if (!username || !password || !turnstileToken) {
+    return res.status(400).json({ success: false, message: 'Username, password, and CAPTCHA token are required' });
+  }
+
+  const isValidCaptcha = await verifyTurnstileToken(turnstileToken);
+  if (!isValidCaptcha) {
+    return res.status(400).json({ success: false, message: 'Invalid CAPTCHA' });
   }
 
   const findUserCommand = `
@@ -149,7 +169,7 @@ app.post('/api/login', asyncHandler(async (req, res) => {
       success: true,
       username: userData.SamAccountName || username,
       displayName: userData.DisplayName || username,
-      isAdmin: userData.IsAdmin || false, // Include isAdmin in response
+      isAdmin: userData.IsAdmin || false,
     });
   } catch (error) {
     if (!IS_PRODUCTION) console.error('Login Error:', error.message);
@@ -242,27 +262,23 @@ app.post('/api/generate-code', asyncHandler(async (req, res) => {
   }
 
   try {
-    // Format the timestamp to yyyy-mm-dd hh:mm
     const now = new Date();
     const year = now.getFullYear();
-    const month = String(now.getMonth() + 1).padStart(2, '0'); // Months are 0-based
+    const month = String(now.getMonth() + 1).padStart(2, '0');
     const day = String(now.getDate()).padStart(2, '0');
     const hours = String(now.getHours()).padStart(2, '0');
     const minutes = String(now.getMinutes()).padStart(2, '0');
     const formattedDate = `${year}-${month}-${day} ${hours}:${minutes}`;
 
-    // Log to confirm formatting
     console.log(`Generating secret code: ${secretCode} || ${username} || ${formattedDate}`);
 
-    // Create the new line
     const newLine = `${secretCode} || ${username} || ${formattedDate}\n`;
 
-    // Append the new line, ensuring the file ends with a newline if it exists
     let fileContent = '';
     try {
       fileContent = await fs.readFile(SECRET_CODE_FILE, 'utf8');
     } catch (error) {
-      if (error.code !== 'ENOENT') throw error; // Ignore if file doesn't exist
+      if (error.code !== 'ENOENT') throw error;
     }
 
     if (fileContent && !fileContent.endsWith('\n')) {

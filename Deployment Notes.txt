@@ -1,5 +1,25 @@
 BACKEND:
-Create a Windows Service with NSSM
+
+--Check API_URL param in frontend .env file--
+--Check params in backend .env file--
+--Required dependencies for npm--
+    "axios": "^1.8.4",
+    "body-parser": "^1.20.3",
+    "bootstrap-icons": "^1.11.3",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "ldapjs": "^3.0.7"
+--Install Required dependencies--
+npm install express cors body-parser dotenv ldapjs
+
+--Install axios--
+npm install axios
+
+--Install Cloudflare Turnstile package--
+npm install @marsidev/react-turnstile
+
+--Create a Windows Service with NSSM--
 Open Command Prompt as Administrator:
 Navigate to your backend folder:
 
@@ -37,6 +57,8 @@ Open Services (services.msc) and confirm changepass-backend is running.
 
 --------------
 FRONTEND:
+
+
 Step 1: Verify Frontend Build
     Confirm Build Folder:
     Check:
