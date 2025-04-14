@@ -8,6 +8,10 @@ const path = require('path');
 const axios = require('axios');
 require('dotenv').config();
 
+const sanitizeInput = (input) => {
+  return input.replace(/['";`]/g, '').replace(/\s+/g, ' ').trim();
+};
+
 const app = express();
 app.use(cors());
 app.use(bodyParser.json());
@@ -31,6 +35,8 @@ const RETRY_INTERVAL = 300000; // 5 minutes
 const TWENTY_MINUTES = 20 * 60 * 1000; // 20 minutes in milliseconds
 const IS_PRODUCTION = process.env.NODE_ENV === 'production';
 const TURNSTILE_SECRET_KEY = process.env.TURNSTILE_SECRET_KEY;
+const MAX_RETRIES = 5;
+const EXPIRY_HOURS = 24;
 
 const asyncHandler = fn => (req, res, next) =>
   Promise.resolve(fn(req, res, next)).catch(error => {
@@ -96,8 +102,11 @@ const execPS = async (command) => {
       timeout: 30000,
       maxBuffer: 1024 * 1024
     });
-    if (stderr && !stdout) {
+    /*if (stderr && !stdout) {
       throw new Error('PowerShell execution failed');
+    }*/
+    if (stderr && stderr.includes('Error')) {
+      throw new Error(`PowerShell error: ${stderr}`);
     }
     if (!stdout.trim()) {
       throw new Error('No output from PowerShell');
@@ -125,10 +134,13 @@ app.post('/api/login', asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Invalid CAPTCHA' });
   }
 
+  const sanitizedUsername = sanitizeInput(username);
+  const sanitizedPassword = sanitizeInput(password);
+
   const findUserCommand = `
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8;
     ${getCredString(adConfig.username, adConfig.password)}
-    $user = Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName,DisplayName,MemberOf -ErrorAction Stop;
+    $user = Get-ADUser -Identity '${sanitizedUsername}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName,DisplayName,MemberOf -ErrorAction Stop;
     $adminGroup = Get-ADGroup -Identity '${adConfig.adminGroup}' -Server '${adConfig.server}' -Credential $cred -ErrorAction Stop;
     $isAdmin = $user.MemberOf -contains $adminGroup.DistinguishedName;
     if ($user) {
@@ -154,8 +166,8 @@ app.post('/api/login', asyncHandler(async (req, res) => {
 
     const authCommand = `
       [Console]::OutputEncoding = [System.Text.Encoding]::UTF8;
-      ${getCredString(fullUPN, password)}
-      $user = Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -ErrorAction Stop;
+      ${getCredString(fullUPN, sanitizedPassword)}
+      $user = Get-ADUser -Identity '${sanitizedUsername}' -Server '${adConfig.server}' -Credential $cred -ErrorAction Stop;
       if ($user) {
         'Authentication successful'
       } else {
@@ -187,9 +199,12 @@ app.post('/api/change-ad-password', asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Username and new password are required' });
   }
 
+  const sanitizedUsername = sanitizeInput(username);
+  const sanitizedPassword = sanitizeInput(newPassword);
+
   const command = `
     ${getCredString(adConfig.username, adConfig.password)}
-    Set-ADAccountPassword -Identity '${username}' -NewPassword (ConvertTo-SecureString '${newPassword}' -AsPlainText -Force) -Server '${adConfig.server}' -Credential $cred -ErrorAction Stop;
+    Set-ADAccountPassword -Identity '${sanitizedUsername}' -NewPassword (ConvertTo-SecureString '${sanitizedPassword}' -AsPlainText -Force) -Server '${adConfig.server}' -Credential $cred -ErrorAction Stop;
     'Password changed successfully'
   `;
   try {
@@ -207,10 +222,13 @@ app.post('/api/change-azure-password', asyncHandler(async (req, res) => {
     return res.status(400).json({ success: false, message: 'Username and new password are required' });
   }
 
+  const sanitizedUsername = sanitizeInput(username);
+  const sanitizedPassword = sanitizeInput(newPassword);
+
   const findUserCommand = `
     [Console]::OutputEncoding = [System.Text.Encoding]::UTF8;
     ${getCredString(adConfig.username, adConfig.password)}
-    $user = Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName -ErrorAction Stop;
+    $user = Get-ADUser -Identity '${sanitizedUsername}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName -ErrorAction Stop;
     if ($user) {
       $user | Select-Object -Property UserPrincipalName | ConvertTo-Json -Compress
     } else {
@@ -239,7 +257,7 @@ app.post('/api/change-azure-password', asyncHandler(async (req, res) => {
   const command = `
     ${getCredString(adConfig.username, adConfig.password)}
     Connect-MsolService -Credential $cred -ErrorAction Stop;
-    Set-MsolUserPassword -UserPrincipalName '${azureUsername}' -NewPassword '${newPassword}' -ForceChangePassword $false -ErrorAction Stop | Out-Null;
+    Set-MsolUserPassword -UserPrincipalName '${azureUsername}' -NewPassword '${sanitizedPassword}' -ForceChangePassword $false -ErrorAction Stop | Out-Null;
     'Azure password changed successfully'
   `;
   try {
@@ -247,7 +265,7 @@ app.post('/api/change-azure-password', asyncHandler(async (req, res) => {
     res.json({ success: true, message: 'Azure AD password changed successfully' });
   } catch (error) {
     if (!IS_PRODUCTION) console.error('Azure Password Change Error:', error.message);
-    await storePendingChange(username, newPassword);
+    await storePendingChange(sanitizedUsername, sanitizedPassword);
     res.status(500).json({
       success: false,
       message: 'Azure AD password change failed. Will retry later.',
@@ -255,13 +273,57 @@ app.post('/api/change-azure-password', asyncHandler(async (req, res) => {
   }
 }));
 
+const manageSecretCodeFile = async () => {
+  try {
+    const VALIDATED_LOG_FILE = path.join(__dirname, 'secrets/validated_codes.log');
+    const fileContent = await fs.readFile(SECRET_CODE_FILE, 'utf8');
+    const lines = fileContent.trim().split('\n').filter(line => line);
+    const now = new Date();
+    const validatedLines = [];
+    const activeLines = [];
+
+    // Process each line
+    for (const line of lines) {
+      if (line.startsWith('#EXPIRED#')) {
+        continue; // Skip expired lines
+      } else if (line.startsWith('#VALIDATED#')) {
+        validatedLines.push(line.replace('#VALIDATED# ', '')); // Store validated without prefix
+      } else {
+        activeLines.push(line); // Keep active codes
+      }
+    }
+
+    // Write back only active lines to reset_password.code
+    await fs.writeFile(SECRET_CODE_FILE, activeLines.join('\n') + (activeLines.length ? '\n' : ''));
+
+    // Append validated lines to validated_codes.log
+    if (validatedLines.length) {
+      await fs.mkdir(path.dirname(VALIDATED_LOG_FILE), { recursive: true });
+      // const logEntry = validatedLines.map(line => `${new Date().toISOString()} || ${line}`).join('\n') + '\n';
+      const logEntry = validatedLines.map(line => `${line}`).join('\n') + '\n';
+      await fs.appendFile(VALIDATED_LOG_FILE, logEntry);
+    }
+
+    return true;
+  } catch (error) {
+    if (!IS_PRODUCTION) console.error('Manage Secret Code File Error:', error.message);
+    throw new Error('Failed to manage secret code file');
+  }
+};
+
 app.post('/api/generate-code', asyncHandler(async (req, res) => {
   const { secretCode, username } = req.body;
   if (!secretCode || !username) {
     return res.status(400).json({ success: false, message: 'Secret code and username are required' });
   }
 
+  const sanitizedUsername = sanitizeInput(username);
+  const sanitizedSecretCode = sanitizeInput(secretCode);
+
   try {
+    // Clean up the secret code file before adding new entry
+    await manageSecretCodeFile();
+
     const now = new Date();
     const year = now.getFullYear();
     const month = String(now.getMonth() + 1).padStart(2, '0');
@@ -270,22 +332,13 @@ app.post('/api/generate-code', asyncHandler(async (req, res) => {
     const minutes = String(now.getMinutes()).padStart(2, '0');
     const formattedDate = `${year}-${month}-${day} ${hours}:${minutes}`;
 
-    console.log(`Generating secret code: ${secretCode} || ${username} || ${formattedDate}`);
+    if (!IS_PRODUCTION) console.log(`Generating secret code: ${sanitizedSecretCode} || ${sanitizedUsername} || ${formattedDate}`);
 
-    const newLine = `${secretCode} || ${username} || ${formattedDate}\n`;
+    const newLine = `${sanitizedSecretCode} || ${sanitizedUsername} || ${formattedDate}\n`;
 
-    let fileContent = '';
-    try {
-      fileContent = await fs.readFile(SECRET_CODE_FILE, 'utf8');
-    } catch (error) {
-      if (error.code !== 'ENOENT') throw error;
-    }
-
-    if (fileContent && !fileContent.endsWith('\n')) {
-      await fs.appendFile(SECRET_CODE_FILE, '\n');
-    }
-
+    // Append the new secret code
     await fs.appendFile(SECRET_CODE_FILE, newLine);
+
     res.json({ success: true, message: 'Secret code generated successfully' });
   } catch (error) {
     if (!IS_PRODUCTION) console.error('Generate Code Error:', error.message);
@@ -299,6 +352,9 @@ app.post('/api/reset-password', asyncHandler(async (req, res) => {
   if (!username || !secretCode) {
     return res.status(400).json({ success: false, message: 'Username and secret code are required' });
   }
+
+  const sanitizedUsername = sanitizeInput(username);
+  const sanitizedSecretCode = sanitizeInput(secretCode);
 
   try {
     const fileContent = await fs.readFile(SECRET_CODE_FILE, 'utf8');
@@ -340,7 +396,7 @@ app.post('/api/reset-password', asyncHandler(async (req, res) => {
       const [storedCode, storedUsername, timeStr] = line.split(' || ').map(part => part.trim());
       if (!storedCode || !storedUsername || !timeStr) continue;
 
-      if (storedUsername === username && storedCode === secretCode) {
+      if (storedUsername === sanitizedUsername && storedCode === sanitizedSecretCode) {
         foundMatch = true;
         matchIndex = i;
         break;
@@ -357,9 +413,8 @@ app.post('/api/reset-password', asyncHandler(async (req, res) => {
 
     res.json({
       success: true,
-      username,
-      displayName: username,
-      isAdmin: false, // Explicitly indicate non-admin status
+      username: sanitizedUsername,
+      displayName: sanitizedUsername,
     });
   } catch (error) {
     if (!IS_PRODUCTION) console.error('Reset Password Error:', error.message);
@@ -369,8 +424,10 @@ app.post('/api/reset-password', asyncHandler(async (req, res) => {
 
 const storePendingChange = async (username, newPassword) => {
   try {
+    const sanitizedUsername = sanitizeInput(username);
+    const sanitizedPassword = sanitizeInput(newPassword);
     const pending = await getPendingChanges();
-    pending.push({ username, newPassword, timestamp: Date.now() });
+    pending.push({ username: sanitizedUsername, newPassword: sanitizedPassword, timestamp: Date.now(), retries: 0 });
     await fs.writeFile(PENDING_FILE, JSON.stringify(pending, null, 2));
   } catch (error) {
     if (!IS_PRODUCTION) console.error('Store Pending Change Error:', error.message);
@@ -392,12 +449,23 @@ const retryPendingChanges = async () => {
     const pending = await getPendingChanges();
     if (!pending.length) return;
     const updatedPending = [];
+    const MAX_RETRIES = 5;
+    const EXPIRY_HOURS = 24;
+    const now = Date.now();
 
-    for (const { username, newPassword } of pending) {
+    for (const { username, newPassword, timestamp, retries = 0 } of pending) {
+      if (retries >= MAX_RETRIES || now - timestamp > EXPIRY_HOURS * 60 * 60 * 1000) {
+        if (!IS_PRODUCTION) console.log(`Expiring change for ${username}: ${retries >= MAX_RETRIES ? 'Max retries reached' : 'Expired'}`);
+        continue;
+      }
+
+      const sanitizedUsername = sanitizeInput(username);
+      const sanitizedPassword = sanitizeInput(newPassword);
+
       const findUserCommand = `
         [Console]::OutputEncoding = [System.Text.Encoding]::UTF8;
         ${getCredString(adConfig.username, adConfig.password)}
-        $user = Get-ADUser -Identity '${username}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName -ErrorAction Stop;
+        $user = Get-ADUser -Identity '${sanitizedUsername}' -Server '${adConfig.server}' -Credential $cred -Properties UserPrincipalName -ErrorAction Stop;
         if ($user) {
           $user | Select-Object -Property UserPrincipalName | ConvertTo-Json -Compress
         } else {
@@ -422,14 +490,14 @@ const retryPendingChanges = async () => {
         const command = `
           ${getCredString(adConfig.username, adConfig.password)}
           Connect-MsolService -Credential $cred -ErrorAction Stop;
-          Set-MsolUserPassword -UserPrincipalName '${azureUsername}' -NewPassword '${newPassword}' -ForceChangePassword $false -ErrorAction Stop | Out-Null;
+          Set-MsolUserPassword -UserPrincipalName '${azureUsername}' -NewPassword '${sanitizedPassword}' -ForceChangePassword $false -ErrorAction Stop | Out-Null;
           'Azure password changed successfully'
         `;
         await execPS(command);
-        if (!IS_PRODUCTION) console.log(`Retry succeeded for ${username}`);
+        if (!IS_PRODUCTION) console.log(`Retry succeeded for ${sanitizedUsername}`);
       } catch (error) {
-        if (!IS_PRODUCTION) console.error(`Retry failed for ${username}:`, error.message);
-        updatedPending.push({ username, newPassword, timestamp: Date.now() });
+        if (!IS_PRODUCTION) console.error(`Retry failed for ${sanitizedUsername}:`, error.message);
+        updatedPending.push({ username: sanitizedUsername, newPassword: sanitizedPassword, timestamp, retries: retries + 1 });
       }
     }
     await fs.writeFile(PENDING_FILE, JSON.stringify(updatedPending, null, 2));
