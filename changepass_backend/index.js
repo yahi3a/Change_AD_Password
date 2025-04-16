@@ -6,6 +6,7 @@ const exec = promisify(require('child_process').exec);
 const fs = require('fs').promises;
 const path = require('path');
 const axios = require('axios');
+const jwt = require('jsonwebtoken');
 require('dotenv').config();
 
 const sanitizeInput = (input) => {
@@ -45,8 +46,8 @@ const asyncHandler = fn => (req, res, next) =>
   });
 
 const validateEnv = () => {
-  const required = ['AD_URL', 'AD_USERNAME', 'AD_PASSWORD', 'AD_SERVER', 'ADMIN_GROUP', 'TURNSTILE_SECRET_KEY'];
-  const missing = required.filter(key => !process.env[key]);
+  const required = ['AD_URL', 'AD_USERNAME', 'AD_PASSWORD', 'AD_SERVER', 'ADMIN_GROUP', 'TURNSTILE_SECRET_KEY', 'JWT_SECRET'];
+  const missing = required.filter(key => !process.env[key] || process.env[key].trim() === '');
   if (missing.length) throw new Error(`Missing environment variables: ${missing.join(', ')}`);
 };
 
@@ -123,6 +124,22 @@ const getCredString = (username, password) => {
   return `$cred = New-Object System.Management.Automation.PSCredential('${username}', (ConvertTo-SecureString '${escapedPassword}' -AsPlainText -Force));`;
 };
 
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Expecting "Bearer <token>"
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'Authentication token required' });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ success: false, message: 'Invalid or expired token' });
+    }
+    req.user = user; // Save user info for the endpoint
+    next(); // Let the request continue
+  });
+};
+
 app.post('/api/login', asyncHandler(async (req, res) => {
   const { username, password, turnstileToken } = req.body;
   if (!username || !password || !turnstileToken) {
@@ -177,8 +194,16 @@ app.post('/api/login', asyncHandler(async (req, res) => {
     `;
     await execPS(authCommand);
 
+    // Generate JWT
+    const token = jwt.sign(
+      { username: userData.SamAccountName, isAdmin: userData.IsAdmin },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
     res.json({
       success: true,
+      token, // Send the JWT to the frontend
       username: userData.SamAccountName || username,
       displayName: userData.DisplayName || username,
       isAdmin: userData.IsAdmin || false,
@@ -193,10 +218,13 @@ app.post('/api/logout', (req, res) => {
   res.json({ success: true, message: 'Logged out successfully' });
 });
 
-app.post('/api/change-ad-password', asyncHandler(async (req, res) => {
+app.post('/api/change-ad-password', authenticateToken, asyncHandler(async (req, res) => {
   const { username, newPassword } = req.body;
   if (!username || !newPassword) {
     return res.status(400).json({ success: false, message: 'Username and new password are required' });
+  }
+  if (username !== req.user.username) {
+    return res.status(403).json({ success: false, message: 'Unauthorized: You can only change your own password' });
   }
 
   const sanitizedUsername = sanitizeInput(username);
@@ -216,10 +244,13 @@ app.post('/api/change-ad-password', asyncHandler(async (req, res) => {
   }
 }));
 
-app.post('/api/change-azure-password', asyncHandler(async (req, res) => {
+app.post('/api/change-azure-password', authenticateToken, asyncHandler(async (req, res) => {
   const { username, newPassword } = req.body;
   if (!username || !newPassword) {
     return res.status(400).json({ success: false, message: 'Username and new password are required' });
+  }
+  if (username !== req.user.username) {
+    return res.status(403).json({ success: false, message: 'Unauthorized: You can only change your own password' });
   }
 
   const sanitizedUsername = sanitizeInput(username);
@@ -311,7 +342,10 @@ const manageSecretCodeFile = async () => {
   }
 };
 
-app.post('/api/generate-code', asyncHandler(async (req, res) => {
+app.post('/api/generate-code', authenticateToken, asyncHandler(async (req, res) => {
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ success: false, message: 'Admin access required' });
+  }
   const { secretCode, username } = req.body;
   if (!secretCode || !username) {
     return res.status(400).json({ success: false, message: 'Secret code and username are required' });
@@ -321,7 +355,6 @@ app.post('/api/generate-code', asyncHandler(async (req, res) => {
   const sanitizedSecretCode = sanitizeInput(secretCode);
 
   try {
-    // Clean up the secret code file before adding new entry
     await manageSecretCodeFile();
 
     const now = new Date();
@@ -336,7 +369,6 @@ app.post('/api/generate-code', asyncHandler(async (req, res) => {
 
     const newLine = `${sanitizedSecretCode} || ${sanitizedUsername} || ${formattedDate}\n`;
 
-    // Append the new secret code
     await fs.appendFile(SECRET_CODE_FILE, newLine);
 
     res.json({ success: true, message: 'Secret code generated successfully' });
@@ -348,7 +380,6 @@ app.post('/api/generate-code', asyncHandler(async (req, res) => {
 
 app.post('/api/reset-password', asyncHandler(async (req, res) => {
   const { username, secretCode } = req.body;
-
   if (!username || !secretCode) {
     return res.status(400).json({ success: false, message: 'Username and secret code are required' });
   }
@@ -411,8 +442,16 @@ app.post('/api/reset-password', asyncHandler(async (req, res) => {
     await fs.writeFile(SECRET_CODE_FILE, updatedLines.join('\n'), 'utf8');
     if (!IS_PRODUCTION) console.log('Validated secret code');
 
+    // Generate a temporary JWT for password reset
+    const tempToken = jwt.sign(
+      { username: sanitizedUsername, isAdmin: false },
+      process.env.JWT_SECRET,
+      { expiresIn: '10m' } // Short-lived token for reset
+    );
+
     res.json({
       success: true,
+      token: tempToken,
       username: sanitizedUsername,
       displayName: sanitizedUsername,
     });
