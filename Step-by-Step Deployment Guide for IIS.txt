@@ -1,0 +1,360 @@
+Step-by-Step Deployment Guide for IIS
+This guide assumes you’re deploying on a Windows Server with IIS, Node.js, and PowerShell modules installed, as per the previous prerequisites. I’ll adjust the steps to account for your updated files and ensure compatibility.
+ 
+Step 1: Prepare the Application
+Your application has a React frontend and a Node.js backend. We’ll build the frontend and configure the backend for the server.
+ 
+  1.1 Build the React Frontend
+    Navigate to the Frontend Directory:
+    Assuming your project structure separates frontend and backend (e.g., C:\password-manager\client for frontend), navigate to it:
+    PowerShell or CMD
+    cd C:\password-manager\client
+    Install Dependencies:
+    Install all dependencies, including the new @marsidev/react-turnstile:
+    PowerShell or CMD    
+    npm install
+    
+    Update REACT_APP_API_URL:
+    For IIS, use a relative path to avoid hardcoding the domain. In App.tsx, update the API_URL:
+    typescript
+
+    const API_URL = '/api'; // Use for production
+    // Comment out or remove: const API_URL = 'http://localhost:3001/api';
+    Alternatively, update the frontend .env for production:
+    plaintext
+    
+    REACT_APP_API_URL=/api
+    This ensures API requests go through the IIS reverse proxy.
+    Set Turnstile Site Key:
+    Your App.tsx uses a placeholder TURNSTILE_SITE_KEY (0x4AAAAAABK9_sE3dvA8dmId). Replace it with your actual Cloudflare Turnstile site key:
+    typescript
+    
+    const TURNSTILE_SITE_KEY = 'your-actual-site-key'; // Obtain from Cloudflare dashboard
+    Ensure the corresponding TURNSTILE_SECRET_KEY in the backend .env matches the site key’s secret.
+    Set Base Path (Optional):
+    If deploying under a subfolder (e.g., http://yourserver/password-manager), add to client/package.json:
+       
+    {
+      "homepage": "/password-manager"
+    }
+    This ensures React Router handles paths correctly.
+    
+    Build the Frontend:
+    Create a production build:
+    PowerShell or CMD    
+    npm run build
+    This generates a build folder (e.g., C:\password-manager\client\build) with static files (index.html, JS, CSS, etc.).
+
+  1.2 Prepare the Node.js Backend
+    Navigate to the Backend Directory:
+    Assuming the backend is in C:\password-manager\backend:
+    PowerShell or CMD  
+    cd C:\password-manager\backend
+    
+    Install Dependencies:
+    Install dependencies, including the new axios package:
+    PowerShell or CMD  
+    npm install
+
+    Update .env for Production:
+    Copy the backend .env to the server and update NODE_ENV:
+    AD_URL=ldap://10.10.2.34:389
+    AD_BASE_DN=dc=vh,dc=geleximco
+    AD_USERNAME=chngpswd@dragondoson.vn
+    AD_PASSWORD=36%%Hoangcau^^
+    AD_SERVER=10.10.2.34
+    ADMIN_GROUP=G_CNTT
+    TURNSTILE_SECRET_KEY=0x4AAAAAABK9_lX_5e5sHMX-vuJ51DS-v-s
+    PORT=3001
+    NODE_ENV=production
+    JWT_SECRET=chuoi_bi_mat_cuc_ky_kho_do_$$33@@11
+
+    Alternatively, set these as system environment variables (see Step 5.3).
+    Test the Backend Locally:
+    Start the backend:
+    PowerShell or CMD    
+    node index.js
+
+    Verify it runs on http://localhost:3001 and responds to:
+    PowerShell or CMD    
+    curl http://localhost:3001/api/logout
+    Expected output: {"success":true,"message":"Logged out successfully"}.
+    Stop the server (Ctrl + C).
+
+  1.3 Copy Files to Server
+    Transfer Files:
+    Copy the frontend build folder to the server, e.g., C:\inetpub\wwwroot\password-manager\client\build.
+    Copy the backend folder (containing index.js, package.json, .env, secrets/reset_password.code, etc.) to C:\inetpub\wwwroot\password-manager\backend.
+    Install Backend Dependencies on Server:
+    On the server, navigate to C:\inetpub\wwwroot\password-manager\backend and run:
+    PowerShell or CMD    
+    npm install
+
+Step 2: Configure IIS
+IIS will serve the frontend’s static files and proxy API requests to the Node.js backend.
+
+  2.1 Create an Application Pool
+    Open IIS Manager:
+    Run inetmgr (Win + R, type inetmgr).
+
+    Add Application Pool:
+    Right-click Application Pools > Add Application Pool.
+    Name: PasswordManagerPool.
+    .NET CLR Version: No Managed Code.
+    Managed Pipeline Mode: Integrated.
+    Click OK.
+
+    Set Application Pool Identity:
+    Right-click PasswordManagerPool > Advanced Settings.
+    Under Process Model > Identity, select Custom account > Set.
+
+    Use a service account (e.g., DOMAIN\YourServiceAccount) with:
+    Permissions to execute PowerShell and access AD (for Get-ADUser, Set-ADAccountPassword).
+    Read/write access to C:\inetpub\wwwroot\password-manager\backend\secrets\reset_password.code and pending-azure-changes.json.
+
+    Example command to grant file permissions:
+    powershell
+    icacls "C:\inetpub\wwwroot\password-manager\backend" /grant "DOMAIN\YourServiceAccount:(R,W)"
+
+  2.2 Create a Website or Application
+    Add Website:
+    Right-click Sites > Add Website.
+    Site Name: PasswordManager.
+    Application Pool: PasswordManagerPool.
+    Physical Path: C:\inetpub\wwwroot\password-manager\client\build.
+    Binding:
+    Type: http (switch to https later).
+    Host Name: (optional, e.g., doimatkhau.dragondoson.vn).
+    Port: 80 (or 8080 if 80 is occupied).
+    Click OK.
+
+    Subfolder Deployment (Optional):
+    If using a subfolder (e.g., /password-manager):
+    Right-click Default Web Site > Add Application.
+    Alias: password-manager.
+    Application Pool: PasswordManagerPool.
+    Physical Path: C:\inetpub\wwwroot\password-manager\client\build.
+    Ensure client/package.json has "homepage": "/password-manager".
+
+  2.3 Configure URL Rewrite
+    To support React Router and proxy API requests:
+
+    Install URL Rewrite Module:
+    Download from iis.net/downloads/microsoft/url-rewrite if not already installed.
+    Create web.config:
+    In C:\inetpub\wwwroot\password-manager\client\build, create web.config:
+
+    <?xml version="1.0" encoding="UTF-8"?>
+    <configuration>
+    <system.webServer>
+        <rewrite>
+        <rules>
+            <!-- Serve static files directly -->
+            <rule name="Static Assets" stopProcessing="true">
+            <match url="([\S]+[.](html|htm|svg|js|css|png|gif|jpg|jpeg|ico|woff|woff2|ttf))" />
+            <action type="Rewrite" url="{R:1}" />
+            </rule>
+            <!-- Proxy API requests to Node.js backend -->
+            <rule name="API Proxy" stopProcessing="true">
+            <match url="^api/(.*)" />
+            <action type="Rewrite" url="http://localhost:3001/api/{R:1}" />
+            </rule>
+            <!-- Redirect all other requests to index.html for React Router -->
+            <rule name="ReactRouter Routes" stopProcessing="true">
+            <match url=".*" />
+            <conditions logicalGrouping="MatchAll">
+                <add input="{REQUEST_FILENAME}" matchType="IsFile" negate="true" />
+                <add input="{REQUEST_FILENAME}" matchType="IsDirectory" negate="true" />
+            </conditions>
+            <action type="Rewrite" url="/index.html" />
+            </rule>
+        </rules>
+        </rewrite>
+        <security>
+        <requestFiltering>
+            <hiddenSegments>
+            <add segment=".env" />
+            <add segment="reset_password.code" />
+            <add segment="pending-azure-changes.json" />
+            </hiddenSegments>
+        </requestFiltering>
+        </security>
+    </system.webServer>
+    </configuration>
+
+    Explanation:
+    Static Assets: Serves frontend files (JS, CSS, images, fonts).
+    API Proxy: Forwards /api/* to http://localhost:3001/api.
+    ReactRouter Routes: Ensures client-side routing works by serving index.html.
+    Security: Blocks direct access to sensitive files.
+
+    Restart IIS:
+    PowerShell or CMD
+    iisreset
+
+Step 3: Run the Node.js Backend
+Use PM2 to keep the backend running reliably.
+
+  3.1 Install PM2
+    Install PM2 globally:
+    PowerShell or CMD
+    npm install pm2@latest -g
+
+    Verify:
+    PowerShell or CMD
+    pm2 --version
+
+  3.2 Start the Backend
+    Navigate to Backend:
+    PowerShell or CMD
+    cd C:\inetpub\wwwroot\password-manager\backend
+
+    Start with PM2:
+    PowerShell or CMD
+    pm2 start index.js --name password-manager-backend
+
+    Save Configuration:
+    PowerShell or CMD
+    pm2 save
+
+    Enable Startup:
+    PowerShell or CMD
+    pm2 startup
+    Follow any prompted commands to configure PM2 to run on server boot.
+
+  3.3 Verify Backend:
+    Check status:
+    PowerShell or CMD
+    pm2 ls
+
+    Test API:
+    PowerShell or CMD
+    curl http://localhost:3001/api/logout
+
+Step 4: Configure PowerShell Modules
+Your backend relies on ActiveDirectory and MSOnline modules:
+    Install Modules:
+    Open PowerShell as Administrator:
+    powershell
+    Install-Module -Name ActiveDirectory -Force           Force
+    Install-Module -Name MSOnline -Force
+
+    Verify:
+    powershell
+    Get-Module -ListAvailable ActiveDirectory,MSOnline
+
+Step 5: Secure the Application
+Enable HTTPS:
+    Obtain an SSL certificate (e.g., Let’s Encrypt or your organization’s CA).
+    In IIS Manager, edit Bindings for the site, add https on port 443, and select the certificate.
+    Update web.config to redirect HTTP to HTTPS:
+
+    <rule name="Redirect to HTTPS" stopProcessing="true">
+    <match url="(.*)" />
+    <conditions>
+        <add input="{HTTPS}" pattern="off" ignoreCase="true" />
+    </conditions>
+    <action type="Redirect" url="https://{HTTP_HOST}/{R:1}" redirectType="Permanent" />
+    </rule>
+    Place at the top of <rules>.
+
+    Secure Environment Variables:
+    Avoid storing .env in a web-accessible directory. Instead, set variables at the system level:
+        System Properties > Advanced > Environment Variables > System Variables.
+        Add AD_URL, AD_USERNAME, etc.
+    
+    If using .env, ensure it’s outside the web root (e.g., C:\password-manager\backend\.env) and inaccessible:
+    powershell
+        icacls "C:\password-manager\backend\.env" /inheritance:d
+        icacls "C:\password-manager\backend\.env" /grant "Administrators:F"
+        icacls "C:\password-manager\backend\.env" /grant "DOMAIN\YourServiceAccount:R"
+        Network Access for Turnstile:
+    Ensure the server allows outbound HTTPS connections to https://challenges.cloudflare.com for CAPTCHA verification.
+    Test:
+    PowerShell or CMD
+    curl https://challenges.cloudflare.com
+
+    File Permissions:
+    Grant the application pool user access:
+    powershell
+    icacls "C:\inetpub\wwwroot\password-manager\backend\secrets" /grant "IIS AppPool\PasswordManagerPool:(R,W)"
+    icacls "C:\inetpub\wwwroot\password-manager\backend\pending-azure-changes.json" /grant "IIS AppPool\PasswordManagerPool:(R,W)"
+    
+Step 6: Test the Application
+Access the Site:
+    Navigate to http://yourserver (or https://doimatkhau.dragondoson.vn if HTTPS is set up).
+    Verify the login page loads with the Turnstile widget.
+    
+    Test Login:
+    Enter AD credentials and complete CAPTCHA.
+    Ensure the password change form appears.
+    
+    Test Password Reset:
+    Use Forgot Password, enter a valid username and secret code from reset_password.code, and verify the reset process.
+    
+    Test Admin Features:
+    Log in with a user in G_CNTT group.
+    Verify the Admin button appears.
+    Generate a secret code and check reset_password.code for the new entry (format: code || username || YYYY-MM-DD HH:MM).
+    
+    Test CAPTCHA:
+    Attempt login without completing CAPTCHA; verify the error message (translations[language].captchaError).
+    
+    Check Logs:
+    Backend: pm2 logs password-manager-backend.
+    IIS: Check C:\inetpub\logs\LogFiles.
+    
+    Troubleshooting
+    Turnstile Fails:
+    Verify TURNSTILE_SITE_KEY and TURNSTILE_SECRET_KEY match your Cloudflare settings.
+    Ensure outbound HTTPS to challenges.cloudflare.com is allowed.
+    
+    Test verification manually:
+    PowerShell or CMD
+    curl -X POST -d "secret=your_secret_key&response=your_token" https://challenges.cloudflare.com/turnstile/v0/siteverify
+    API 404/500 Errors:
+    
+    Ensure the backend is running (pm2 ls).
+    Verify web.config proxy rule (http://localhost:3001/api).
+    
+    Check backend logs for errors.
+    PowerShell Errors:
+    Confirm modules are installed.
+    Ensure the application pool identity has AD access.
+    Temporarily set NODE_ENV=development for detailed logs.
+    File Access Denied:
+    Verify permissions on reset_password.code and pending-azure-changes.json.
+    Use Process Monitor to diagnose.
+    Page Refresh 404:
+    Confirm URL Rewrite module and web.config rules are correct.
+    Mixed Content (HTTP/HTTPS):
+    If using HTTPS, ensure all resources (e.g., logo.png, Turnstile) are loaded over HTTPS.
+    Additional Notes
+    Subfolder Deployment:
+    If using /password-manager, ensure homepage is set and test all routes.
+    Monitoring:
+    Monitor PM2: pm2 monit.
+
+    Enable IIS logging in inetmgr.
+    Performance:
+    Enable compression in web.config:
+    xml
+    <httpCompression directory="%SystemDrive%\inetpub\temp\IIS Temporary Compressed Files">
+    <scheme name="gzip" dll="%Windir%\system32\inetsrv\gzip.dll" />
+    <dynamicTypes>
+        <add mimeType="text/*" enabled="true" />
+        <add mimeType="application/javascript" enabled="true" />
+    </dynamicTypes>
+    <staticTypes>
+        <add mimeType="text/*" enabled="true" />
+        <add mimeType="application/javascript" enabled="true" />
+    </staticTypes>
+    </httpCompression>
+
+Summary
+Your updated application should work on IIS with these adjustments. The key changes are:
+    Setting API_URL to /api for proxying.
+    Ensuring Turnstile keys are correct and network access is allowed.
+    Securing environment variables and files.
+    Configuring IIS with proper rewrite rules and permissions.
+    Test thoroughly after deployment, especially the Turnstile integration and admin features. If you encounter issues, share error messages or logs, and I’ll help troubleshoot further. Let me know when you’re ready to proceed or if you need assistance with specific server configurations!

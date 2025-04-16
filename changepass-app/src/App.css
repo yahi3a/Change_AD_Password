@@ -97,7 +97,7 @@ input::placeholder {
 .forgot-password {
   display: block;
   text-align: center;
-  color: #004d40;
+  color: #000000;
   font-size: 14px;
   text-decoration: none;
   margin: 0;
@@ -290,7 +290,7 @@ form p.warning {
 
 .admin-form {
   position: fixed;
-  top: 40%;
+  top: 45%;
   left: 50%;
   transform: translate(-50%, -50%);
   background-color: rgba(252, 252, 252, 0.9);
