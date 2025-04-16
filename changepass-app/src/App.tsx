@@ -135,7 +135,7 @@ function App() {
       passwordRequirement: 'Mật khẩu dài tối thiểu 11 ký tự và chứa ít nhất ba trong bốn yếu tố sau: chữ viết hoa, chữ viết thường, số và ký tự đặc biệt. Ngoài ra, KHÔNG ĐƯỢC bao gồm TÊN NGƯỜI DÙNG của bạn.',
       azurePendingWarning: 'Mật khẩu đăng nhập Windows đã được thay đổi, nhưng Mật khẩu tài khoản Email & Office 365 có thể mất tới 24 giờ để cập nhật. Vui lòng thử lại sau.',
       forgotPassword: 'Bạn quên mật khẩu?',
-      resetInstructions: 'Vui lòng liên hệ quản trị viên hệ thống để nhận mã xác thực nhằm đặt lại mật khẩu của bạn. Lưu ý mã này chỉ có hiệu lực trong 20 phút.',
+      resetInstructions: 'Vui lòng liên hệ quản trị viên hệ thống để nhận mã xác thực nhằm đặt lại mật khẩu của bạn. Lưu ý mã này chỉ có hiệu lực trong 20 phút.',
       secretCodeLabel: 'Mã xác thực: ',
       secretCodePlaceholder: 'Nhập chuỗi xác thực bí mật được quản trị viên cung cấp',
       submitCodeButton: 'Xác nhận mã',
