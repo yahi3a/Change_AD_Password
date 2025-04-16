@@ -38,6 +38,8 @@ interface Translation {
   adminErrorMessage: string;
   generateButton: string;
   captchaError: string;
+  secretCodeTooShort: string; // Add this
+  secretCodeHasSpaces: string; // Add this
 }
 
 interface Translations {
@@ -113,6 +115,8 @@ function App() {
       adminErrorMessage: 'Failed to generate secret code',
       generateButton: 'Generate',
       captchaError: 'Please complete the CAPTCHA verification.',
+      secretCodeTooShort: 'Secret code must be at least 8 characters long.',
+      secretCodeHasSpaces: 'Secret code cannot contain spaces.',
     },
     vi: {
       title: 'GELEXIMCO - QUẢN LÝ TÀI KHOẢN',
@@ -148,6 +152,8 @@ function App() {
       adminErrorMessage: 'Không thể tạo mã xác thực',
       generateButton: 'Khởi Tạo',
       captchaError: 'Vui lòng hoàn thành xác minh CAPTCHA.',
+      secretCodeTooShort: 'Mã xác thực phải dài ít nhất 8 ký tự.',
+      secretCodeHasSpaces: 'Mã xác thực không được chứa khoảng trắng.',
     },
   };
 
@@ -319,6 +325,17 @@ function App() {
       setTimeout(() => setAdminMessage(null), 2000);
       return;
     }
+    // Validate secret code
+    if (newSecretCode.length < 8) {
+      setAdminMessage({ text: translations[language].secretCodeTooShort, type: 'error' });
+      setTimeout(() => setAdminMessage(null), 2000);
+      return;
+    }
+    if (/\s/.test(newSecretCode)) {
+      setAdminMessage({ text: translations[language].secretCodeHasSpaces, type: 'error' });
+      setTimeout(() => setAdminMessage(null), 2000);
+      return;
+    }
     setIsProcessing(true);
     try {
       const response = await axios.post(
@@ -351,7 +368,7 @@ function App() {
         setTimeout(() => setAdminMessage(null), 5000);
         return;
       }
-      setAdminMessage({ text: translations[language].adminErrorMessage, type: 'error' });
+      setAdminMessage({ text: error.response?.data?.message || translations[language].adminErrorMessage, type: 'error' });
       setTimeout(() => setAdminMessage(null), 2000);
     } finally {
       setIsProcessing(false);
