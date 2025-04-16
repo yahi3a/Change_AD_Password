@@ -138,7 +138,7 @@ function App() {
       forgotPassword: 'Bạn quên mật khẩu?',
       resetInstructions: 'Vui lòng liên hệ quản trị viên hệ thống để nhận mã xác thực nhằm đặt lại mật khẩu của bạn. Lưu ý mã này chỉ có hiệu lực trong 20 phút.',
       secretCodeLabel: 'Mã xác thực: ',
-      secretCodePlaceholder: 'Nhập chuỗi xác thực bí mật được IT cung cấp',
+      secretCodePlaceholder: 'Nhập chuỗi xác thực bí mật được quản trị viên cung cấp',
       submitCodeButton: 'Xác nhận mã',
       invalidCodeError: 'Thông tin bạn nhập không hợp lệ hoặc đã hết hạn. Vui lòng thử lại với TÊN ĐĂNG NHẬP và MÃ XÁC THỰC chính xác hoặc liên hệ quản trị viên hệ thống.',
       validationSuccess: 'Xác thực thành công, tiếp theo bạn có thể tiến hành thay đổi mật khẩu.',
