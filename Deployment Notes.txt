@@ -1,17 +1,27 @@
 BACKEND:
-
---Check API_URL param in frontend .env file--
 --Check params in backend .env file--
+
 --Required dependencies for npm--
+Check the package.json file in the backend folder
+"dependencies": {
+    "@marsidev/react-turnstile": "^1.1.0",
+    "activedirectory2": "^2.2.0",
     "axios": "^1.8.4",
+    "bcrypt": "^5.1.1",
     "body-parser": "^1.20.3",
     "bootstrap-icons": "^1.11.3",
     "cors": "^2.8.5",
     "dotenv": "^16.4.7",
     "express": "^4.21.2",
-    "ldapjs": "^3.0.7"
+    "express-rate-limit": "^7.5.0",
+    "jsonwebtoken": "^9.0.2",
+    "ldapjs": "^3.0.7",
+    "winston": "^3.17.0"
+}
+
 --Install Required dependencies--
 npm install express cors body-parser dotenv ldapjs
+npm install bcrypt express-rate-limit jsonwebtoken winston
 
 --Install axios--
 npm install axios
@@ -57,8 +67,9 @@ Open Services (services.msc) and confirm changepass-backend is running.
 
 --------------
 FRONTEND:
+--Check API_URL param in frontend .env file--
 
-
+--  --
 Step 1: Verify Frontend Build
     Confirm Build Folder:
     Check:
