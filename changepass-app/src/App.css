@@ -414,3 +414,56 @@ form p.warning {
   opacity: 0.7; /* Slightly transparent to be unobtrusive */
   z-index: 1200; /* Higher than admin-form (1000) and top-right-buttons (1100) */
 }
+
+/* Circular Spinner */
+.spinner-circular {
+  display: inline-block;
+  width: 16px;
+  height: 16px;
+  border: 2px solid #ffffff; /* White for button contrast */
+  border-top: 2px solid #0288d1; /* Blue to match your theme */
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-right: 8px;
+  vertical-align: middle;
+}
+
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
+}
+
+/* Pulsing Dots */
+.spinner-dots {
+  display: inline-flex;
+  gap: 4px;
+  vertical-align: middle;
+  margin-right: 8px;
+}
+
+.spinner-dots span {
+  width: 6px;
+  height: 6px;
+  background-color: #ffffff;
+  border-radius: 50%;
+  animation: pulse 1.2s ease-in-out infinite;
+}
+
+.spinner-dots span:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.spinner-dots span:nth-child(3) {
+  animation-delay: 0.4s;
+}
+
+@keyframes pulse {
+  0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
+  40% { transform: scale(1.2); opacity: 1; }
+}
+
+/* Adjust button padding for spinner */
+button .spinner-circular,
+button .spinner-dots {
+  margin-right: 8px;
+}
