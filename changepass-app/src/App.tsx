@@ -76,6 +76,7 @@ function App() {
   const [newSecretCode, setNewSecretCode] = useState<string>('');
   const [adminMessage, setAdminMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
+  const [token, setToken] = useState<string | null>(null); // Added token state
 
   const translations: Translations = {
     en: {
@@ -172,6 +173,7 @@ function App() {
       console.log('Login response from backend:', response.data);
       if (response.data.success) {
         setLoggedIn(true);
+        setToken(response.data.token); // Save JWT
         setUsername(response.data.username);
         setDisplayName(response.data.displayName || response.data.username);
         setIsAdmin(response.data.isAdmin || false);
@@ -226,18 +228,20 @@ function App() {
 
       setIsProcessing(true);
       try {
-        const adResponse = await axios.post(`${API_URL}/change-ad-password`, {
-          username,
-          newPassword: trimmedPassword,
-        });
+        const adResponse = await axios.post(
+          `${API_URL}/change-ad-password`,
+          { username, newPassword: trimmedPassword },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
         if (!adResponse.data.success) {
           throw new Error(adResponse.data.message || translations[language].matchError);
         }
 
-        const azureResponse = await axios.post(`${API_URL}/change-azure-password`, {
-          username,
-          newPassword: trimmedPassword,
-        });
+        const azureResponse = await axios.post(
+          `${API_URL}/change-azure-password`,
+          { username, newPassword: trimmedPassword },
+          { headers: { Authorization: `Bearer ${token}` } }
+        );
 
         if (azureResponse.data.success) {
           setMessage({
@@ -256,7 +260,17 @@ function App() {
         setConfirmPassword('');
       } catch (error: any) {
         console.error('Password Change Error:', error);
-        setMessage({ text: error.message || translations[language].matchError, type: 'error' });
+        if (error.response?.status === 401 || error.response?.status === 403) {
+          setMessage({ text: translations[language].loginError + ' Session expired. Please log in again.', type: 'error' });
+          setLoggedIn(false);
+          setToken(null);
+          setUsername('');
+          setDisplayName('');
+          setIsAdmin(false);
+          setTimeout(() => setMessage(null), 5000);
+          return;
+        }
+        setMessage({ text: error.response?.data?.message || translations[language].matchError, type: 'error' });
         setTimeout(() => {
           setMessage(null);
           setPassword('');
@@ -280,13 +294,14 @@ function App() {
       .post(`${API_URL}/logout`, { username })
       .then(() => {
         setLoggedIn(false);
+        setToken(null); // Clear token
         setUsername('');
         setDisplayName('');
         setMessage(null);
         setPasswordChanged(false);
-        setIsAdmin(false); // Reset admin status
-        setShowAdminForm(false); // Close admin form
-        setTargetUsername(''); // Clear admin form inputs
+        setIsAdmin(false);
+        setShowAdminForm(false);
+        setTargetUsername('');
         setNewSecretCode('');
         setAdminMessage(null);
       })
@@ -306,10 +321,11 @@ function App() {
     }
     setIsProcessing(true);
     try {
-      const response = await axios.post(`${API_URL}/generate-code`, {
-        username: targetUsername,
-        secretCode: newSecretCode,
-      });
+      const response = await axios.post(
+        `${API_URL}/generate-code`,
+        { username: targetUsername, secretCode: newSecretCode },
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
       if (response.data.success) {
         setAdminMessage({ text: translations[language].adminSuccessMessage, type: 'success' });
         setTimeout(() => {
@@ -322,8 +338,19 @@ function App() {
         setAdminMessage({ text: response.data.message || translations[language].adminErrorMessage, type: 'error' });
         setTimeout(() => setAdminMessage(null), 2000);
       }
-    } catch (error) {
+    } catch (error: any) {
       console.error('Generate Code Error:', error);
+      if (error.response?.status === 401 || error.response?.status === 403) {
+        setAdminMessage({ text: translations[language].adminErrorMessage + ' Session expired. Please log in again.', type: 'error' });
+        setLoggedIn(false);
+        setToken(null);
+        setUsername('');
+        setDisplayName('');
+        setIsAdmin(false);
+        setShowAdminForm(false);
+        setTimeout(() => setAdminMessage(null), 5000);
+        return;
+      }
       setAdminMessage({ text: translations[language].adminErrorMessage, type: 'error' });
       setTimeout(() => setAdminMessage(null), 2000);
     } finally {
@@ -355,7 +382,8 @@ function App() {
         setSecretCode('');
         setUsername(response.data.username);
         setDisplayName(response.data.displayName || response.data.username);
-        setIsAdmin(response.data.isAdmin || false); // Use backend's isAdmin value
+        setToken(response.data.token); // Store temporary token
+        setIsAdmin(false); // Reset isAdmin since token sets it
         setTimeout(() => {
           setShowValidationSuccess(false);
           setLoggedIn(true);
@@ -366,9 +394,8 @@ function App() {
         setResetMessage(translations[language].invalidCodeError);
         setTimeout(() => setResetMessage(''), 5000);
       }
-    } catch (error) {
-      const axiosError = error as AxiosError<ErrorResponse>;
-      console.error('Reset Password Error:', axiosError.response ? axiosError.response.data : axiosError.message);
+    } catch (error: any) {
+      console.error('Reset Password Error:', error);
       setResetMessage(translations[language].invalidCodeError);
       setTimeout(() => setResetMessage(''), 5000);
     } finally {
@@ -381,7 +408,7 @@ function App() {
       const timer = setTimeout(() => handleLogout(), 10000);
       return () => clearTimeout(timer);
     }
-  }, [passwordChanged, handleLogout]);
+  }, [passwordChanged]);
 
   return (
     <div className={`App ${isProcessing ? 'processing' : ''}`}>
@@ -631,7 +658,6 @@ function App() {
         Created by Nguyễn Trần Hưng
       </div>
     </div>
-
   );
 }
 

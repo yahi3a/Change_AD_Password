@@ -193,10 +193,13 @@ app.post('/api/logout', (req, res) => {
   res.json({ success: true, message: 'Logged out successfully' });
 });
 
-app.post('/api/change-ad-password', asyncHandler(async (req, res) => {
+app.post('/api/change-ad-password', authenticateToken, asyncHandler(async (req, res) => {
   const { username, newPassword } = req.body;
   if (!username || !newPassword) {
     return res.status(400).json({ success: false, message: 'Username and new password are required' });
+  }
+  if (username !== req.user.username) {
+    return res.status(403).json({ success: false, message: 'Unauthorized: You can only change your own password' });
   }
 
   const sanitizedUsername = sanitizeInput(username);
@@ -216,10 +219,13 @@ app.post('/api/change-ad-password', asyncHandler(async (req, res) => {
   }
 }));
 
-app.post('/api/change-azure-password', asyncHandler(async (req, res) => {
+app.post('/api/change-azure-password', authenticateToken, asyncHandler(async (req, res) => {
   const { username, newPassword } = req.body;
   if (!username || !newPassword) {
     return res.status(400).json({ success: false, message: 'Username and new password are required' });
+  }
+  if (username !== req.user.username) {
+    return res.status(403).json({ success: false, message: 'Unauthorized: You can only change your own password' });
   }
 
   const sanitizedUsername = sanitizeInput(username);
@@ -311,7 +317,10 @@ const manageSecretCodeFile = async () => {
   }
 };
 
-app.post('/api/generate-code', asyncHandler(async (req, res) => {
+app.post('/api/generate-code', authenticateToken, asyncHandler(async (req, res) => {
+  if (!req.user.isAdmin) {
+    return res.status(403).json({ success: false, message: 'Admin access required' });
+  }
   const { secretCode, username } = req.body;
   if (!secretCode || !username) {
     return res.status(400).json({ success: false, message: 'Secret code and username are required' });
@@ -321,7 +330,6 @@ app.post('/api/generate-code', asyncHandler(async (req, res) => {
   const sanitizedSecretCode = sanitizeInput(secretCode);
 
   try {
-    // Clean up the secret code file before adding new entry
     await manageSecretCodeFile();
 
     const now = new Date();
@@ -336,7 +344,6 @@ app.post('/api/generate-code', asyncHandler(async (req, res) => {
 
     const newLine = `${sanitizedSecretCode} || ${sanitizedUsername} || ${formattedDate}\n`;
 
-    // Append the new secret code
     await fs.appendFile(SECRET_CODE_FILE, newLine);
 
     res.json({ success: true, message: 'Secret code generated successfully' });
@@ -348,7 +355,6 @@ app.post('/api/generate-code', asyncHandler(async (req, res) => {
 
 app.post('/api/reset-password', asyncHandler(async (req, res) => {
   const { username, secretCode } = req.body;
-
   if (!username || !secretCode) {
     return res.status(400).json({ success: false, message: 'Username and secret code are required' });
   }
@@ -411,8 +417,16 @@ app.post('/api/reset-password', asyncHandler(async (req, res) => {
     await fs.writeFile(SECRET_CODE_FILE, updatedLines.join('\n'), 'utf8');
     if (!IS_PRODUCTION) console.log('Validated secret code');
 
+    // Generate a temporary JWT for password reset
+    const tempToken = jwt.sign(
+      { username: sanitizedUsername, isAdmin: false },
+      process.env.JWT_SECRET,
+      { expiresIn: '10m' } // Short-lived token for reset
+    );
+
     res.json({
       success: true,
+      token: tempToken,
       username: sanitizedUsername,
       displayName: sanitizedUsername,
     });
