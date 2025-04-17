@@ -8,6 +8,7 @@ const path = require('path');
 const axios = require('axios');
 const jwt = require('jsonwebtoken');
 const bcrypt = require('bcrypt');
+const rateLimit = require('express-rate-limit');
 require('dotenv').config();
 
 const sanitizeInput = (input) => {
@@ -141,7 +142,21 @@ const authenticateToken = (req, res, next) => {
   });
 };
 
-app.post('/api/login', asyncHandler(async (req, res) => {
+// Rate limiter for /api/login
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 5, // 5 requests per IP
+  message: { success: false, message: 'Too many login attempts. Please try again later.' },
+});
+
+// Rate limiter for /api/reset-password
+const resetLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 10, // 10 requests per IP
+  message: { success: false, message: 'Too many reset attempts. Please try again later.' },
+});
+
+app.post('/api/login', loginLimiter, asyncHandler(async (req, res) => {
   const { username, password, turnstileToken } = req.body;
   if (!username || !password || !turnstileToken) {
     return res.status(400).json({ success: false, message: 'Username, password, and CAPTCHA token are required' });
@@ -387,7 +402,7 @@ app.post('/api/generate-code', authenticateToken, asyncHandler(async (req, res) 
   }
 }));
 
-app.post('/api/reset-password', asyncHandler(async (req, res) => {
+app.post('/api/reset-password', resetLimiter, asyncHandler(async (req, res) => {
   const { username, secretCode } = req.body;
   if (!username || !secretCode) {
     return res.status(400).json({ success: false, message: 'Username and secret code are required' });

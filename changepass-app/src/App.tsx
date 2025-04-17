@@ -176,27 +176,31 @@ function App() {
         password: loginPassword,
         turnstileToken,
       });
-      console.log('Login response from backend:', response.data);
       if (response.data.success) {
         setLoggedIn(true);
-        setToken(response.data.token); // Save JWT
         setUsername(response.data.username);
         setDisplayName(response.data.displayName || response.data.username);
         setIsAdmin(response.data.isAdmin || false);
-        console.log('Set displayName to:', response.data.displayName);
         setLoginMessage('');
-        setLoginUsername('');
-        setLoginPassword('');
+        setLoginUsername(''); // Clear username
+        setLoginPassword(''); // Clear password
         setTurnstileToken(null);
       } else {
         setLoginMessage(translations[language].loginError);
-        setTimeout(() => setLoginMessage(''), 2000);
+        setTimeout(() => {
+          setLoginMessage('');
+          setLoginUsername(''); // Clear on failure
+          setLoginPassword(''); // Clear on failure
+        }, 2000);
       }
     } catch (error) {
       const axiosError = error as AxiosError<ErrorResponse>;
-      console.error('Login Error:', axiosError.response ? axiosError.response.data : axiosError.message);
       setLoginMessage(axiosError.response?.data?.message || translations[language].loginError);
-      setTimeout(() => setLoginMessage(''), 2000);
+      setTimeout(() => {
+        setLoginMessage('');
+        setLoginUsername(''); // Clear on error
+        setLoginPassword(''); // Clear on error
+      }, 2000);
     } finally {
       setIsProcessing(false);
     }
@@ -399,7 +403,7 @@ function App() {
         setSecretCode('');
         setUsername(response.data.username);
         setDisplayName(response.data.displayName || response.data.username);
-        setToken(response.data.token); // Store temporary token
+        setToken(response.data.token);
         setIsAdmin(false);
         setTimeout(() => {
           setShowValidationSuccess(false);
@@ -413,7 +417,11 @@ function App() {
       }
     } catch (error: any) {
       console.error('Reset Password Error:', error);
-      setResetMessage(translations[language].invalidCodeError);
+      if (error.response?.status === 429) {
+        setResetMessage('Too many reset attempts. Please try again in 15 minutes.');
+      } else {
+        setResetMessage(error.response?.data?.message || translations[language].invalidCodeError);
+      }
       setTimeout(() => setResetMessage(''), 5000);
     } finally {
       setIsProcessing(false);
@@ -458,10 +466,12 @@ function App() {
                   <label>{translations[language].loginUsernameLabel}</label>
                   <input
                     type="text"
+                    name={`username_${Date.now()}`} // Dynamic name to confuse browsers
                     value={loginUsername}
                     onChange={(e) => setLoginUsername(e.target.value)}
                     placeholder={translations[language].loginPlaceholder}
                     disabled={isProcessing}
+                    autoComplete="off" // Prevent saving username
                   />
                 </div>
                 <div>
@@ -472,27 +482,28 @@ function App() {
                     onChange={(e) => setSecretCode(e.target.value)}
                     placeholder={translations[language].secretCodePlaceholder}
                     disabled={isProcessing}
+                    autoComplete="off" // Prevent saving secret code
                   />
                 </div>
-                  <button type="submit" disabled={isProcessing}>
-                    {isProcessing ? (
-                      <span className="spinner-dots">
+                <button type="submit" disabled={isProcessing}>
+                  {isProcessing ? (
+                    <span className="spinner-dots">
                       <span></span>
                       <span></span>
                       <span></span>
                       <span></span>
                       <span></span>
                     </span>
-                    ) : (
-                      translations[language].submitCodeButton
-                    )}
-                  </button>
+                  ) : (
+                    translations[language].submitCodeButton
+                  )}
+                </button>
                 {resetMessage && <p className="error">{resetMessage}</p>}
               </form>
             </div>
           ) : (
             <>
-              <form onSubmit={handleLogin}>
+              <form onSubmit={handleLogin} autoComplete="off">
                 <div>
                   <label>{translations[language].loginUsernameLabel}</label>
                   <input
@@ -501,16 +512,19 @@ function App() {
                     onChange={(e) => setLoginUsername(e.target.value)}
                     placeholder={translations[language].loginPlaceholder}
                     disabled={isProcessing}
+                    autoComplete="off" // Prevent saving username
                   />
                 </div>
                 <div>
                   <label>{translations[language].loginPasswordLabel}</label>
                   <input
                     type={showLoginPassword ? 'text' : 'password'}
+                    name={'password_' + Date.now()} // Dynamic name to confuse browsers
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
                     placeholder={translations[language].passwordPlaceholder}
                     disabled={isProcessing}
+                    autoComplete="off" // Prevent saving password
                   />
                   <button
                     type="button"
@@ -522,29 +536,29 @@ function App() {
                     <i className={showLoginPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
                   </button>
                 </div>
-                    <a
-                      href="#"
-                      className="forgot-password"
-                      onClick={(e) => {
-                        e.preventDefault();
-                        setShowResetPopup(true);
-                      }}
-                    >
-                      {translations[language].forgotPassword}
-                    </a>
-                    <button type="submit" disabled={isProcessing}>
-                      {isProcessing ? (
-                        <span className="spinner-dots">
-                        <span></span>
-                        <span></span>
-                        <span></span>
-                      </span>
-                      ) : (
-                        translations[language].loginButton
-                      )}
-                    </button>
-                    <p className="error">{loginMessage}</p>
-                  </form>
+                <a
+                  href="#"
+                  className="forgot-password"
+                  onClick={(e) => {
+                    e.preventDefault();
+                    setShowResetPopup(true);
+                  }}
+                >
+                  {translations[language].forgotPassword}
+                </a>
+                <button type="submit" disabled={isProcessing}>
+                  {isProcessing ? (
+                    <span className="spinner-dots">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </span>
+                  ) : (
+                    translations[language].loginButton
+                  )}
+                </button>
+                <p className="error">{loginMessage}</p>
+              </form>
               <div className="turnstile-container">
                 <Turnstile
                   siteKey={TURNSTILE_SITE_KEY}
@@ -561,7 +575,8 @@ function App() {
           )
         ) : (
           !showAdminForm && (
-            <form onSubmit={handleSubmit}>
+            // Password Change Form
+            <form onSubmit={handleSubmit} autoComplete="off">
               <p className="welcome">
                 {translations[language].welcome}
                 {displayName}!
@@ -580,6 +595,7 @@ function App() {
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder={translations[language].newPasswordPlaceholder}
                       disabled={isProcessing}
+                      autoComplete="new-password" // Use new-password to prevent autofill
                     />
                     <button
                       type="button"
@@ -599,6 +615,7 @@ function App() {
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder={translations[language].confirmPlaceholder}
                       disabled={isProcessing}
+                      autoComplete="new-password" // Use new-password to prevent autofill
                     />
                     <button
                       type="button"
@@ -610,19 +627,19 @@ function App() {
                       <i className={showConfirmPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
                     </button>
                   </div>
-                    <button type="submit" disabled={isProcessing}>
-                      {isProcessing ? (
-                        <span className="spinner-dots">
+                  <button type="submit" disabled={isProcessing}>
+                    {isProcessing ? (
+                      <span className="spinner-dots">
                         <span></span>
                         <span></span>
                         <span></span>
                         <span></span>
                         <span></span>
                       </span>
-                      ) : (
-                        translations[language].changePasswordButton
-                      )}
-                    </button>
+                    ) : (
+                      translations[language].changePasswordButton
+                    )}
+                  </button>
                 </>
               )}
               {message && <p className={message.type}>{message.text}</p>}
@@ -680,6 +697,7 @@ function App() {
                 onChange={(e) => setTargetUsername(e.target.value)}
                 placeholder={translations[language].loginPlaceholder}
                 disabled={isProcessing}
+                autoComplete="off" // Prevent saving username
               />
             </div>
             <div>
@@ -690,17 +708,18 @@ function App() {
                 onChange={(e) => setNewSecretCode(e.target.value)}
                 placeholder={translations[language].secretCodePlaceholder}
                 disabled={isProcessing}
+                autoComplete="off" // Prevent saving secret code
               />
             </div>
             <button type="submit" disabled={isProcessing}>
               {isProcessing ? (
                 <span className="spinner-dots">
-                <span></span>
-                <span></span>
-                <span></span>
-                <span></span>
-                <span></span>
-              </span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                  <span></span>
+                </span>
               ) : (
                 translations[language].generateButton
               )}
