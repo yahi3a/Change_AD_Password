@@ -474,9 +474,19 @@ function App() {
                     disabled={isProcessing}
                   />
                 </div>
-                <button type="submit" disabled={isProcessing}>
-                  {translations[language].submitCodeButton}
-                </button>
+                  <button type="submit" disabled={isProcessing}>
+                    {isProcessing ? (
+                      <span className="spinner-dots">
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                      <span></span>
+                    </span>
+                    ) : (
+                      translations[language].submitCodeButton
+                    )}
+                  </button>
                 {resetMessage && <p className="error">{resetMessage}</p>}
               </form>
             </div>
@@ -512,21 +522,29 @@ function App() {
                     <i className={showLoginPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
                   </button>
                 </div>
-                <a
-                  href="#"
-                  className="forgot-password"
-                  onClick={(e) => {
-                    e.preventDefault();
-                    setShowResetPopup(true);
-                  }}
-                >
-                  {translations[language].forgotPassword}
-                </a>
-                <button type="submit" disabled={isProcessing}>
-                  {translations[language].loginButton}
-                </button>
-                <p className="error">{loginMessage}</p>
-              </form>
+                    <a
+                      href="#"
+                      className="forgot-password"
+                      onClick={(e) => {
+                        e.preventDefault();
+                        setShowResetPopup(true);
+                      }}
+                    >
+                      {translations[language].forgotPassword}
+                    </a>
+                    <button type="submit" disabled={isProcessing}>
+                      {isProcessing ? (
+                        <span className="spinner-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                      </span>
+                      ) : (
+                        translations[language].loginButton
+                      )}
+                    </button>
+                    <p className="error">{loginMessage}</p>
+                  </form>
               <div className="turnstile-container">
                 <Turnstile
                   siteKey={TURNSTILE_SITE_KEY}
@@ -592,9 +610,19 @@ function App() {
                       <i className={showConfirmPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
                     </button>
                   </div>
-                  <button type="submit" disabled={isProcessing}>
-                    {translations[language].changePasswordButton}
-                  </button>
+                    <button type="submit" disabled={isProcessing}>
+                      {isProcessing ? (
+                        <span className="spinner-dots">
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                        <span></span>
+                      </span>
+                      ) : (
+                        translations[language].changePasswordButton
+                      )}
+                    </button>
                 </>
               )}
               {message && <p className={message.type}>{message.text}</p>}
@@ -665,7 +693,17 @@ function App() {
               />
             </div>
             <button type="submit" disabled={isProcessing}>
-              {translations[language].generateButton}
+              {isProcessing ? (
+                <span className="spinner-dots">
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+                <span></span>
+              </span>
+              ) : (
+                translations[language].generateButton
+              )}
             </button>
             {adminMessage && <p className={adminMessage.type}>{adminMessage.text}</p>}
           </form>
