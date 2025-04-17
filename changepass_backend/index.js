@@ -6,6 +6,8 @@ const exec = promisify(require('child_process').exec);
 const fs = require('fs').promises;
 const path = require('path');
 const axios = require('axios');
+const jwt = require('jsonwebtoken');
+const bcrypt = require('bcrypt');
 require('dotenv').config();
 
 const sanitizeInput = (input) => {
@@ -45,8 +47,8 @@ const asyncHandler = fn => (req, res, next) =>
   });
 
 const validateEnv = () => {
-  const required = ['AD_URL', 'AD_USERNAME', 'AD_PASSWORD', 'AD_SERVER', 'ADMIN_GROUP', 'TURNSTILE_SECRET_KEY'];
-  const missing = required.filter(key => !process.env[key]);
+  const required = ['AD_URL', 'AD_USERNAME', 'AD_PASSWORD', 'AD_SERVER', 'ADMIN_GROUP', 'TURNSTILE_SECRET_KEY', 'JWT_SECRET'];
+  const missing = required.filter(key => !process.env[key] || process.env[key].trim() === '');
   if (missing.length) throw new Error(`Missing environment variables: ${missing.join(', ')}`);
 };
 
@@ -123,6 +125,22 @@ const getCredString = (username, password) => {
   return `$cred = New-Object System.Management.Automation.PSCredential('${username}', (ConvertTo-SecureString '${escapedPassword}' -AsPlainText -Force));`;
 };
 
+const authenticateToken = (req, res, next) => {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1]; // Expecting "Bearer <token>"
+  if (!token) {
+    return res.status(401).json({ success: false, message: 'Authentication token required' });
+  }
+
+  jwt.verify(token, process.env.JWT_SECRET, (err, user) => {
+    if (err) {
+      return res.status(403).json({ success: false, message: 'Invalid or expired token' });
+    }
+    req.user = user; // Save user info for the endpoint
+    next(); // Let the request continue
+  });
+};
+
 app.post('/api/login', asyncHandler(async (req, res) => {
   const { username, password, turnstileToken } = req.body;
   if (!username || !password || !turnstileToken) {
@@ -177,8 +195,16 @@ app.post('/api/login', asyncHandler(async (req, res) => {
     `;
     await execPS(authCommand);
 
+    // Generate JWT
+    const token = jwt.sign(
+      { username: userData.SamAccountName, isAdmin: userData.IsAdmin },
+      process.env.JWT_SECRET,
+      { expiresIn: '1h' }
+    );
+
     res.json({
       success: true,
+      token, // Send the JWT to the frontend
       username: userData.SamAccountName || username,
       displayName: userData.DisplayName || username,
       isAdmin: userData.IsAdmin || false,
@@ -326,11 +352,19 @@ app.post('/api/generate-code', authenticateToken, asyncHandler(async (req, res) 
     return res.status(400).json({ success: false, message: 'Secret code and username are required' });
   }
 
+  // Validate secret code
+  if (secretCode.length < 8 || /\s/.test(secretCode)) {
+    return res.status(400).json({ success: false, message: 'Secret code must be at least 8 characters long and contain no spaces' });
+  }
+
   const sanitizedUsername = sanitizeInput(username);
   const sanitizedSecretCode = sanitizeInput(secretCode);
 
   try {
     await manageSecretCodeFile();
+
+    // Hash the secret code
+    const hashedCode = await bcrypt.hash(sanitizedSecretCode, 10); // 10 is the salt rounds
 
     const now = new Date();
     const year = now.getFullYear();
@@ -340,9 +374,9 @@ app.post('/api/generate-code', authenticateToken, asyncHandler(async (req, res) 
     const minutes = String(now.getMinutes()).padStart(2, '0');
     const formattedDate = `${year}-${month}-${day} ${hours}:${minutes}`;
 
-    if (!IS_PRODUCTION) console.log(`Generating secret code: ${sanitizedSecretCode} || ${sanitizedUsername} || ${formattedDate}`);
+    if (!IS_PRODUCTION) console.log(`Generating secret code for ${sanitizedUsername} || ${formattedDate}`);
 
-    const newLine = `${sanitizedSecretCode} || ${sanitizedUsername} || ${formattedDate}\n`;
+    const newLine = `${hashedCode} || ${sanitizedUsername} || ${formattedDate}\n`;
 
     await fs.appendFile(SECRET_CODE_FILE, newLine);
 
@@ -373,8 +407,8 @@ app.post('/api/reset-password', asyncHandler(async (req, res) => {
       const line = lines[i];
       if (line.startsWith('#EXPIRED#') || line.startsWith('#VALIDATED#')) continue;
 
-      const [storedCode, storedUsername, timeStr] = line.split(' || ').map(part => part.trim());
-      if (!storedCode || !storedUsername || !timeStr) continue;
+      const [storedHash, storedUsername, timeStr] = line.split(' || ').map(part => part.trim());
+      if (!storedHash || !storedUsername || !timeStr) continue;
 
       const storedDate = new Date(timeStr);
       if (isNaN(storedDate.getTime())) {
@@ -399,13 +433,17 @@ app.post('/api/reset-password', asyncHandler(async (req, res) => {
       const line = updatedLines[i];
       if (line.startsWith('#EXPIRED#') || line.startsWith('#VALIDATED#')) continue;
 
-      const [storedCode, storedUsername, timeStr] = line.split(' || ').map(part => part.trim());
-      if (!storedCode || !storedUsername || !timeStr) continue;
+      const [storedHash, storedUsername, timeStr] = line.split(' || ').map(part => part.trim());
+      if (!storedHash || !storedUsername || !timeStr) continue;
 
-      if (storedUsername === sanitizedUsername && storedCode === sanitizedSecretCode) {
-        foundMatch = true;
-        matchIndex = i;
-        break;
+      if (storedUsername === sanitizedUsername) {
+        // Compare the entered code with the stored hash
+        const isMatch = await bcrypt.compare(sanitizedSecretCode, storedHash);
+        if (isMatch) {
+          foundMatch = true;
+          matchIndex = i;
+          break;
+        }
       }
     }
 
@@ -417,11 +455,10 @@ app.post('/api/reset-password', asyncHandler(async (req, res) => {
     await fs.writeFile(SECRET_CODE_FILE, updatedLines.join('\n'), 'utf8');
     if (!IS_PRODUCTION) console.log('Validated secret code');
 
-    // Generate a temporary JWT for password reset
     const tempToken = jwt.sign(
       { username: sanitizedUsername, isAdmin: false },
       process.env.JWT_SECRET,
-      { expiresIn: '10m' } // Short-lived token for reset
+      { expiresIn: '10m' }
     );
 
     res.json({
