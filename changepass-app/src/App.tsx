@@ -1,7 +1,7 @@
 import 'bootstrap-icons/font/bootstrap-icons.css';
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import axios, { AxiosError } from 'axios';
-import { Turnstile } from '@marsidev/react-turnstile';
+import { Turnstile, TurnstileInstance } from '@marsidev/react-turnstile';
 import './App.css';
 
 interface Translation {
@@ -38,8 +38,18 @@ interface Translation {
   adminErrorMessage: string;
   generateButton: string;
   captchaError: string;
-  secretCodeTooShort: string; // Add this
-  secretCodeHasSpaces: string; // Add this
+  invalidInputError: string;
+  unauthorizedError: string;
+  secretCodeTooShort: string;
+  secretCodeHasSpaces: string;
+  rateLimitError: string;
+  logoutError: string;
+  serverError: string;
+  missingFieldsError: string;
+  invalidCaptchaError: string;
+  invalidCredentialsError: string;
+  passwordChangeError: string;
+  generateCodeError: string;
 }
 
 interface Translations {
@@ -50,6 +60,8 @@ interface Translations {
 interface ErrorResponse {
   success: boolean;
   message?: string;
+  refreshCaptcha?: boolean;
+  errorDetails?: string;
 }
 
 function App() {
@@ -78,7 +90,8 @@ function App() {
   const [newSecretCode, setNewSecretCode] = useState<string>('');
   const [adminMessage, setAdminMessage] = useState<{ text: string; type: 'success' | 'error' } | null>(null);
   const [turnstileToken, setTurnstileToken] = useState<string | null>(null);
-  const [token, setToken] = useState<string | null>(null); // Added token state
+  const [jwtToken, setJwtToken] = useState<string | null>(null);
+  const turnstileRef = useRef<TurnstileInstance | null>(null);
 
   const translations: Translations = {
     en: {
@@ -103,7 +116,7 @@ function App() {
       passwordRequirement: 'The password must be at least 11 characters long and contain at least three of these four elements: an uppercase letter, a lowercase letter, a number, and a special character. It must also NOT include your USERNAME.',
       azurePendingWarning: 'Windows login password changed, but Email/Office 365 account password might take 24h to sync. Please try again later.',
       forgotPassword: 'Forgot password?',
-      resetInstructions: 'Please contact the system administrator to receive the secret code for resetting your password. The code is only valid for 20 minutes.',
+      resetInstructions: 'Contact the System administrator to receive a secret code for resetting your password. Enter your username exactly as provided, and note that the code is valid for only 20 minutes.',
       secretCodeLabel: 'Secret Code: ',
       secretCodePlaceholder: 'Enter the secret code',
       submitCodeButton: 'Submit Code',
@@ -115,8 +128,18 @@ function App() {
       adminErrorMessage: 'Failed to generate secret code',
       generateButton: 'Generate',
       captchaError: 'Please complete the CAPTCHA verification.',
+      invalidInputError: 'Invalid input. Please avoid using spaces, quotes, semicolons, or backticks.',
+      unauthorizedError: 'Session expired or invalid. Please log in again.',
       secretCodeTooShort: 'Secret code must be at least 8 characters long.',
       secretCodeHasSpaces: 'Secret code cannot contain spaces.',
+      rateLimitError: 'Too many attempts for this username, please try again after 10 minutes.',
+      logoutError: 'Logout failed. Please try again.',
+      serverError: 'Server error occurred. Please try again later.',
+      missingFieldsError: 'All required fields must be filled.',
+      invalidCaptchaError: 'Invalid CAPTCHA verification.',
+      invalidCredentialsError: 'Invalid username, password, or secret code.',
+      passwordChangeError: 'Failed to change password. Please try again later.',
+      generateCodeError: 'Failed to generate secret code. Please try again later.',
     },
     vi: {
       title: 'GELEXIMCO - QUẢN LÝ TÀI KHOẢN',
@@ -140,9 +163,9 @@ function App() {
       passwordRequirement: 'Mật khẩu dài tối thiểu 11 ký tự và chứa ít nhất ba trong bốn yếu tố sau: chữ viết hoa, chữ viết thường, số và ký tự đặc biệt. Ngoài ra, KHÔNG ĐƯỢC bao gồm TÊN NGƯỜI DÙNG của bạn.',
       azurePendingWarning: 'Mật khẩu đăng nhập Windows đã được thay đổi, nhưng Mật khẩu tài khoản Email & Office 365 có thể mất tới 24 giờ để cập nhật. Vui lòng thử lại sau.',
       forgotPassword: 'Bạn quên mật khẩu?',
-      resetInstructions: 'Vui lòng liên hệ quản trị viên hệ thống để nhận mã xác thực nhằm đặt lại mật khẩu của bạn. Lưu ý mã này chỉ có hiệu lực trong 20 phút.',
+      resetInstructions: 'Vui lòng liên hệ quản trị viên hệ thống để nhận mã xác thực reset mật khẩu. Nhập chính xác tên đăng nhập của bạn, và lưu ý mã chỉ có hiệu lực trong 20 phút.',
       secretCodeLabel: 'Mã xác thực: ',
-      secretCodePlaceholder: 'Nhập chuỗi xác thực bí mật được quản trị viên cung cấp',
+      secretCodePlaceholder: 'Nhập chuỗi xác thực bí mật được IT cung cấp',
       submitCodeButton: 'Xác nhận mã',
       invalidCodeError: 'Thông tin bạn nhập không hợp lệ hoặc đã hết hạn. Vui lòng thử lại với TÊN ĐĂNG NHẬP và MÃ XÁC THỰC chính xác hoặc liên hệ quản trị viên hệ thống.',
       validationSuccess: 'Xác thực thành công, tiếp theo bạn có thể tiến hành thay đổi mật khẩu.',
@@ -152,14 +175,48 @@ function App() {
       adminErrorMessage: 'Không thể tạo mã xác thực',
       generateButton: 'Khởi Tạo',
       captchaError: 'Vui lòng hoàn thành xác minh CAPTCHA.',
+      invalidInputError: 'Chuỗi ký tự nhập vào không hợp lệ. Vui lòng tránh sử dụng dấu cách, dấu nháy, dấu chấm phẩy hoặc dấu backtick.',
+      unauthorizedError: 'Phiên đăng nhập hết hạn hoặc không hợp lệ. Vui lòng đăng nhập lại.',
       secretCodeTooShort: 'Mã xác thực phải dài ít nhất 8 ký tự.',
       secretCodeHasSpaces: 'Mã xác thực không được chứa khoảng trắng.',
+      rateLimitError: 'Đã quá 5 lần thử cho tên người dùng này, vui lòng trở lại sau 10 phút.',
+      logoutError: 'Đăng xuất thất bại. Vui lòng thử lại.',
+      serverError: 'Lỗi máy chủ. Vui lòng thử lại sau.',
+      missingFieldsError: 'Tất cả các trường bắt buộc phải được điền.',
+      invalidCaptchaError: 'Xác minh CAPTCHA không hợp lệ.',
+      invalidCredentialsError: 'Tên đăng nhập, mật khẩu hoặc mã xác thực không hợp lệ.',
+      passwordChangeError: 'Không thể thay đổi mật khẩu. Vui lòng thử lại sau.',
+      generateCodeError: 'Không thể tạo mã xác thực. Vui lòng thử lại sau.',
     },
   };
 
-  const API_URL = 'http://localhost:3001/api'; // Use this line for development
-  // const API_URL = process.env.REACT_APP_API_URL || 'https://your-production-api-url.com/api'; // Use this line for production
-  const TURNSTILE_SITE_KEY = '0x4AAAAAABK9_sE3dvA8dmId'; // Replace with your site key
+  const API_URL = 'http://localhost:3001/api';
+  const TURNSTILE_SITE_KEY = '0x4AAAAAABK9_sE3dvA8dmId';
+
+  const sanitizeInput = (input: string): string => {
+    if (typeof input !== 'string') return '';
+    return input
+      .replace(/['";`]/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  };
+
+  const api = axios.create({
+    baseURL: API_URL,
+    headers: {
+      'Content-Type': 'application/json',
+    },
+  });
+
+  api.interceptors.request.use(
+    (config) => {
+      if (jwtToken) {
+        config.headers.Authorization = `Bearer ${jwtToken}`;
+      }
+      return config;
+    },
+    (error) => Promise.reject(error)
+  );
 
   const handleLogin = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
@@ -168,39 +225,77 @@ function App() {
       setLoginMessage(translations[language].captchaError);
       setTimeout(() => setLoginMessage(''), 2000);
       setIsProcessing(false);
+      if (turnstileRef.current) {
+        turnstileRef.current.reset();
+      }
+      setTurnstileToken(null);
       return;
     }
+
+    const sanitizedUsername = sanitizeInput(loginUsername);
+    const sanitizedPassword = sanitizeInput(loginPassword);
+
+    if (!sanitizedUsername || !sanitizedPassword) {
+      setLoginMessage(translations[language].invalidInputError);
+      setTimeout(() => setLoginMessage(''), 2000);
+      setIsProcessing(false);
+      if (turnstileRef.current) {
+        turnstileRef.current.reset();
+      }
+      setTurnstileToken(null);
+      return;
+    }
+
     try {
-      const response = await axios.post(`${API_URL}/login`, {
-        username: loginUsername,
-        password: loginPassword,
+      const response = await api.post('/login', {
+        username: sanitizedUsername,
+        password: sanitizedPassword,
         turnstileToken,
       });
+      console.log('Login response from backend:', response.data);
       if (response.data.success) {
         setLoggedIn(true);
         setUsername(response.data.username);
         setDisplayName(response.data.displayName || response.data.username);
         setIsAdmin(response.data.isAdmin || false);
+        setJwtToken(response.data.token);
+        localStorage.setItem('jwtToken', response.data.token);
+        console.log('Set displayName to:', response.data.displayName);
         setLoginMessage('');
-        setLoginUsername(''); // Clear username
-        setLoginPassword(''); // Clear password
+        setLoginUsername('');
+        setLoginPassword('');
         setTurnstileToken(null);
       } else {
         setLoginMessage(translations[language].loginError);
-        setTimeout(() => {
-          setLoginMessage('');
-          setLoginUsername(''); // Clear on failure
-          setLoginPassword(''); // Clear on failure
-        }, 2000);
+        setTimeout(() => setLoginMessage(''), 2000);
+        if (response.data.refreshCaptcha && turnstileRef.current) {
+          turnstileRef.current.reset();
+        }
+        setTurnstileToken(null);
       }
     } catch (error) {
       const axiosError = error as AxiosError<ErrorResponse>;
-      setLoginMessage(axiosError.response?.data?.message || translations[language].loginError);
-      setTimeout(() => {
-        setLoginMessage('');
-        setLoginUsername(''); // Clear on error
-        setLoginPassword(''); // Clear on error
-      }, 2000);
+      console.error('Login Error:', axiosError.response ? axiosError.response.data : axiosError.message);
+      let errorMessage = translations[language].loginError;
+      if (axiosError.response) {
+        if (axiosError.response.status === 429) {
+          errorMessage = translations[language].rateLimitError;
+        } else if (axiosError.response.data?.message === 'Username, password, and CAPTCHA token are required') {
+          errorMessage = translations[language].missingFieldsError;
+        } else if (axiosError.response.data?.message === 'Invalid CAPTCHA') {
+          errorMessage = translations[language].invalidCaptchaError;
+        } else if (axiosError.response.data?.message === 'Invalid username or password') {
+          errorMessage = translations[language].invalidCredentialsError;
+        } else if (axiosError.response.data?.message === 'Server error occurred') {
+          errorMessage = translations[language].serverError;
+        }
+      }
+      setLoginMessage(errorMessage);
+      setTimeout(() => setLoginMessage(''), 2000);
+      if (axiosError.response?.data?.refreshCaptcha && turnstileRef.current) {
+        turnstileRef.current.reset();
+      }
+      setTurnstileToken(null);
     } finally {
       setIsProcessing(false);
     }
@@ -208,145 +303,178 @@ function App() {
 
   const handleSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const trimmedPassword = password.trim();
-    const trimmedConfirmPassword = confirmPassword.trim();
+    const trimmedPassword = sanitizeInput(password);
+    const trimmedConfirmPassword = sanitizeInput(confirmPassword);
 
-    if (username && trimmedPassword && trimmedConfirmPassword) {
-      const PASSWORD_REGEX = new RegExp(
-        `^(?!.*${username}$)(?=(?:[^A-Z]*[A-Z]){1,})(?=(?:[^a-z]*[a-z]){1,})(?=(?:[^0-9]*[0-9]){1,})(?=(?:[^@#$!%*?&]*[@#$!%*?&]){1,}).{11,}$`
-      );
-
-      if (!PASSWORD_REGEX.test(trimmedPassword)) {
-        setMessage({ text: translations[language].passwordRequirement, type: 'error' });
-        setTimeout(() => {
-          setMessage(null);
-          setPassword('');
-          setConfirmPassword('');
-        }, 10000);
-        return;
-      }
-
-      if (trimmedPassword !== trimmedConfirmPassword) {
-        setMessage({ text: translations[language].matchError, type: 'error' });
-        setTimeout(() => {
-          setMessage(null);
-          setPassword('');
-          setConfirmPassword('');
-        }, 3000);
-        return;
-      }
-
-      setIsProcessing(true);
-      try {
-        const adResponse = await axios.post(
-          `${API_URL}/change-ad-password`,
-          { username, newPassword: trimmedPassword },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-        if (!adResponse.data.success) {
-          throw new Error(adResponse.data.message || translations[language].matchError);
-        }
-
-        const azureResponse = await axios.post(
-          `${API_URL}/change-azure-password`,
-          { username, newPassword: trimmedPassword },
-          { headers: { Authorization: `Bearer ${token}` } }
-        );
-
-        if (azureResponse.data.success) {
-          setMessage({
-            text: `${translations[language].successMessage}${displayName}!`,
-            type: 'success',
-          });
-          setPasswordChanged(true);
-        } else {
-          setMessage({
-            text: `${translations[language].azurePendingWarning}${azureResponse.data.message}`,
-            type: 'warning',
-          });
-          setPasswordChanged(true);
-        }
-        setPassword('');
-        setConfirmPassword('');
-      } catch (error: any) {
-        console.error('Password Change Error:', error);
-        if (error.response?.status === 401 || error.response?.status === 403) {
-          setMessage({ text: translations[language].loginError + ' Session expired. Please log in again.', type: 'error' });
-          setLoggedIn(false);
-          setToken(null);
-          setUsername('');
-          setDisplayName('');
-          setIsAdmin(false);
-          setTimeout(() => setMessage(null), 5000);
-          return;
-        }
-        setMessage({ text: error.response?.data?.message || translations[language].matchError, type: 'error' });
-        setTimeout(() => {
-          setMessage(null);
-          setPassword('');
-          setConfirmPassword('');
-        }, 5000);
-      } finally {
-        setIsProcessing(false);
-      }
-    } else {
-      setMessage({ text: translations[language].fieldsError, type: 'error' });
+    if (!trimmedPassword || !trimmedConfirmPassword || !username) {
+      setMessage({ text: translations[language].invalidInputError, type: 'error' });
       setTimeout(() => {
         setMessage(null);
         setPassword('');
         setConfirmPassword('');
       }, 3000);
+      return;
+    }
+
+    const escapedUsername = username.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const PASSWORD_REGEX = new RegExp(`^(?!.*${escapedUsername}).{11,}$`);
+
+    const countCategories = (password: string) => {
+      let count = 0;
+      if (/[A-Z]/.test(password)) count++;
+      if (/[a-z]/.test(password)) count++;
+      if (/[0-9]/.test(password)) count++;
+      if (/[@#$!%*?&]/.test(password)) count++;
+      return count;
+    };
+
+    if (!PASSWORD_REGEX.test(trimmedPassword) || countCategories(trimmedPassword) < 3) {
+      setMessage({ text: translations[language].passwordRequirement, type: 'error' });
+      setTimeout(() => {
+        setMessage(null);
+        setPassword('');
+        setConfirmPassword('');
+      }, 10000);
+      return;
+    }
+
+    if (trimmedPassword !== trimmedConfirmPassword) {
+      setMessage({ text: translations[language].matchError, type: 'error' });
+      setTimeout(() => {
+        setMessage(null);
+        setPassword('');
+        setConfirmPassword('');
+      }, 3000);
+      return;
+    }
+
+    setIsProcessing(true);
+    try {
+      const adResponse = await api.post('/change-ad-password', {
+        newPassword: trimmedPassword,
+      });
+      if (!adResponse.data.success) {
+        throw new Error(adResponse.data.message || translations[language].passwordChangeError);
+      }
+
+      const azureResponse = await api.post('/change-azure-password', {
+        newPassword: trimmedPassword,
+      });
+
+      if (azureResponse.data.success) {
+        setMessage({
+          text: `${translations[language].successMessage}${displayName}!`,
+          type: 'success',
+        });
+        setPasswordChanged(true);
+      } else {
+        setMessage({
+          text: `${translations[language].azurePendingWarning}${azureResponse.data.message}`,
+          type: 'warning',
+        });
+        setPasswordChanged(true);
+      }
+      setPassword('');
+      setConfirmPassword('');
+    } catch (error: any) {
+      const axiosError = error as AxiosError<ErrorResponse>;
+      console.error('Password Change Error:', axiosError.response ? axiosError.response.data : axiosError.message);
+      let errorMessage = translations[language].passwordChangeError;
+      if (axiosError.response) {
+        if (axiosError.response.status === 401) {
+          errorMessage = translations[language].unauthorizedError;
+          setTimeout(() => {
+            handleLogout();
+          }, 2000);
+        } else if (axiosError.response.data?.message === 'New password is required') {
+          errorMessage = translations[language].missingFieldsError;
+        } else if (axiosError.response.data?.message && axiosError.response.data.message.includes('Failed to change')) {
+          errorMessage = translations[language].passwordChangeError;
+        } else if (axiosError.response.data?.message === 'Server error occurred') {
+          errorMessage = translations[language].serverError;
+        }
+      }
+      setMessage({ text: errorMessage, type: 'error' });
+      setTimeout(() => {
+        setMessage(null);
+        setPassword('');
+        setConfirmPassword('');
+      }, 5000);
+    } finally {
+      setIsProcessing(false);
     }
   };
 
   const handleLogout = () => {
-    axios
-      .post(`${API_URL}/logout`, { username })
+    setIsProcessing(true);
+    api
+      .post('/logout')
       .then(() => {
         setLoggedIn(false);
-        setToken(null); // Clear token
         setUsername('');
         setDisplayName('');
+        setIsAdmin(false);
+        setJwtToken(null);
+        localStorage.removeItem('jwtToken');
         setMessage(null);
         setPasswordChanged(false);
-        setIsAdmin(false);
-        setShowAdminForm(false);
-        setTargetUsername('');
-        setNewSecretCode('');
-        setAdminMessage(null);
       })
       .catch((error) => {
-        console.error('Logout Error:', error);
-        setMessage({ text: 'Logout failed. Please try again.', type: 'error' });
-        setTimeout(() => setMessage(null), 2000);
+        const axiosError = error as AxiosError<ErrorResponse>;
+        console.error('Logout Error:', axiosError.response ? axiosError.response.data : axiosError.message);
+        let errorMessage = translations[language].logoutError;
+        if (axiosError.response) {
+          if (axiosError.response.status === 401) {
+            errorMessage = translations[language].unauthorizedError;
+          } else if (axiosError.response.data?.message === 'Server error occurred') {
+            errorMessage = translations[language].serverError;
+          }
+        }
+        setMessage({ text: errorMessage, type: 'error' });
+        setTimeout(() => {
+          setLoggedIn(false);
+          setUsername('');
+          setDisplayName('');
+          setIsAdmin(false);
+          setJwtToken(null);
+          localStorage.removeItem('jwtToken');
+          setMessage(null);
+          setPasswordChanged(false);
+        }, 2000);
+      })
+      .finally(() => {
+        setIsProcessing(false);
       });
   };
 
   const handleGenerateCode = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!targetUsername || !newSecretCode) {
-      setAdminMessage({ text: translations[language].fieldsError, type: 'error' });
+    const sanitizedTargetUsername = sanitizeInput(targetUsername);
+    const sanitizedNewSecretCode = sanitizeInput(newSecretCode);
+
+    if (!sanitizedTargetUsername || !sanitizedNewSecretCode) {
+      setAdminMessage({ text: translations[language].invalidInputError, type: 'error' });
       setTimeout(() => setAdminMessage(null), 2000);
       return;
     }
-    // Validate secret code
-    if (newSecretCode.length < 8) {
+
+    if (sanitizedNewSecretCode.length < 8) {
       setAdminMessage({ text: translations[language].secretCodeTooShort, type: 'error' });
       setTimeout(() => setAdminMessage(null), 2000);
       return;
     }
-    if (/\s/.test(newSecretCode)) {
+    if (/\s/.test(sanitizedNewSecretCode)) {
       setAdminMessage({ text: translations[language].secretCodeHasSpaces, type: 'error' });
       setTimeout(() => setAdminMessage(null), 2000);
       return;
     }
+
     setIsProcessing(true);
     try {
-      const response = await axios.post(
-        `${API_URL}/generate-code`,
-        { username: targetUsername, secretCode: newSecretCode },
-        { headers: { Authorization: `Bearer ${token}` } }
-      );
+      const response = await api.post('/generate-code', {
+        username: sanitizedTargetUsername,
+        secretCode: sanitizedNewSecretCode,
+      });
       if (response.data.success) {
         setAdminMessage({ text: translations[language].adminSuccessMessage, type: 'success' });
         setTimeout(() => {
@@ -359,20 +487,29 @@ function App() {
         setAdminMessage({ text: response.data.message || translations[language].adminErrorMessage, type: 'error' });
         setTimeout(() => setAdminMessage(null), 2000);
       }
-    } catch (error: any) {
-      console.error('Generate Code Error:', error);
-      if (error.response?.status === 401 || error.response?.status === 403) {
-        setAdminMessage({ text: translations[language].adminErrorMessage + ' Session expired. Please log in again.', type: 'error' });
-        setLoggedIn(false);
-        setToken(null);
-        setUsername('');
-        setDisplayName('');
-        setIsAdmin(false);
-        setShowAdminForm(false);
-        setTimeout(() => setAdminMessage(null), 5000);
-        return;
+    } catch (error) {
+      const axiosError = error as AxiosError<ErrorResponse>;
+      console.error('Generate Code Error:', axiosError.response ? axiosError.response.data : axiosError.message);
+      let errorMessage = translations[language].generateCodeError;
+      if (axiosError.response) {
+        if (axiosError.response.status === 401 || axiosError.response.status === 403) {
+          errorMessage = translations[language].unauthorizedError;
+          setTimeout(() => {
+            handleLogout();
+          }, 2000);
+        } else if (axiosError.response.data?.message === 'Secret code and username are required') {
+          errorMessage = translations[language].missingFieldsError;
+        } else if (axiosError.response.data?.message === 'Secret code must be at least 8 characters long') {
+          errorMessage = translations[language].secretCodeTooShort;
+        } else if (axiosError.response.data?.message === 'Secret code cannot contain spaces') {
+          errorMessage = translations[language].secretCodeHasSpaces;
+        } else if (axiosError.response.data?.message === 'Failed to generate secret code') {
+          errorMessage = translations[language].generateCodeError;
+        } else if (axiosError.response.data?.message === 'Server error occurred') {
+          errorMessage = translations[language].serverError;
+        }
       }
-      setAdminMessage({ text: error.response?.data?.message || translations[language].adminErrorMessage, type: 'error' });
+      setAdminMessage({ text: errorMessage, type: 'error' });
       setTimeout(() => setAdminMessage(null), 2000);
     } finally {
       setIsProcessing(false);
@@ -381,18 +518,32 @@ function App() {
 
   const handleResetPassword = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    if (!loginUsername || !secretCode) {
-      setResetMessage(translations[language].fieldsError);
+    const sanitizedUsername = sanitizeInput(loginUsername);
+    const sanitizedSecretCode = sanitizeInput(secretCode);
+
+    if (!sanitizedUsername || !sanitizedSecretCode) {
+      setResetMessage(translations[language].invalidInputError);
+      setTimeout(() => setResetMessage(''), 2000);
+      return;
+    }
+
+    if (sanitizedSecretCode.length < 8) {
+      setResetMessage(translations[language].secretCodeTooShort);
+      setTimeout(() => setResetMessage(''), 2000);
+      return;
+    }
+    if (/\s/.test(sanitizedSecretCode)) {
+      setResetMessage(translations[language].secretCodeHasSpaces);
       setTimeout(() => setResetMessage(''), 2000);
       return;
     }
 
     setIsProcessing(true);
     try {
-      console.log('Attempting reset with:', { username: loginUsername, secretCode });
+      console.log('Attempting reset with:', { username: sanitizedUsername, secretCode: sanitizedSecretCode });
       const response = await axios.post(`${API_URL}/reset-password`, {
-        username: loginUsername,
-        secretCode,
+        username: sanitizedUsername,
+        secretCode: sanitizedSecretCode,
       });
       console.log('Reset response:', response.data);
 
@@ -403,8 +554,8 @@ function App() {
         setSecretCode('');
         setUsername(response.data.username);
         setDisplayName(response.data.displayName || response.data.username);
-        setToken(response.data.token);
-        setIsAdmin(false);
+        setJwtToken(response.data.token);
+        localStorage.setItem('jwtToken', response.data.token);
         setTimeout(() => {
           setShowValidationSuccess(false);
           setLoggedIn(true);
@@ -415,18 +566,34 @@ function App() {
         setResetMessage(translations[language].invalidCodeError);
         setTimeout(() => setResetMessage(''), 5000);
       }
-    } catch (error: any) {
-      console.error('Reset Password Error:', error);
-      if (error.response?.status === 429) {
-        setResetMessage('Too many reset attempts. Please try again in 15 minutes.');
-      } else {
-        setResetMessage(error.response?.data?.message || translations[language].invalidCodeError);
+    } catch (error) {
+      const axiosError = error as AxiosError<ErrorResponse>;
+      console.error('Reset Password Error:', axiosError.response ? axiosError.response.data : axiosError.message);
+      let errorMessage = translations[language].invalidCodeError;
+      if (axiosError.response) {
+        if (axiosError.response.status === 429) {
+          errorMessage = translations[language].rateLimitError;
+        } else if (axiosError.response.data?.message === 'Username and secret code are required') {
+          errorMessage = translations[language].missingFieldsError;
+        } else if (axiosError.response.data?.message === 'Invalid or expired secret code') {
+          errorMessage = translations[language].invalidCredentialsError;
+        } else if (axiosError.response.data?.message === 'Server error occurred') {
+          errorMessage = translations[language].serverError;
+        }
       }
+      setResetMessage(errorMessage);
       setTimeout(() => setResetMessage(''), 5000);
     } finally {
       setIsProcessing(false);
     }
   };
+
+  useEffect(() => {
+    const storedToken = localStorage.getItem('jwtToken');
+    if (storedToken) {
+      setJwtToken(storedToken);
+    }
+  }, []);
 
   useEffect(() => {
     if (passwordChanged) {
@@ -435,11 +602,66 @@ function App() {
     }
   }, [passwordChanged]);
 
+  useEffect(() => {
+    if (!loggedIn && !showResetPopup && !showValidationSuccess && turnstileRef.current) {
+      turnstileRef.current.reset();
+      setTurnstileToken(null);
+    }
+  }, [loggedIn, showResetPopup, showValidationSuccess]);
+
   return (
     <div className={`App ${isProcessing ? 'processing' : ''}`}>
       <div className="center-container">
         <img src="/logo.png" alt="DragonDoson Logo" style={{ width: '170px' }} />
         <h1>{translations[language].title}</h1>
+        {showAdminForm && (
+          <div className="admin-form">
+            <button
+              type="button"
+              className="close-button"
+              onClick={() => setShowAdminForm(false)}
+              disabled={isProcessing}
+              aria-label="Close admin form"
+            >
+              <i className="bi bi-x"></i>
+            </button>
+            <form onSubmit={handleGenerateCode}>
+              <p>{translations[language].adminFormTitle}</p>
+              <div>
+                <label>{translations[language].usernameLabel}</label>
+                <input
+                  type="text"
+                  value={targetUsername}
+                  onChange={(e) => setTargetUsername(e.target.value)}
+                  placeholder={translations[language].loginPlaceholder}
+                  disabled={isProcessing}
+                />
+              </div>
+              <div>
+                <label>{translations[language].secretCodeLabel}</label>
+                <input
+                  type="text"
+                  value={newSecretCode}
+                  onChange={(e) => setNewSecretCode(e.target.value)}
+                  placeholder={translations[language].secretCodePlaceholder}
+                  disabled={isProcessing}
+                />
+              </div>
+              <button type="submit" disabled={isProcessing}>
+                {isProcessing ? (
+                  <span className="spinner-dots">
+                    <span></span>
+                    <span></span>
+                    <span></span>
+                  </span>
+                ) : (
+                  translations[language].generateButton
+                )}
+              </button>
+              {adminMessage && <p className={adminMessage.type}>{adminMessage.text}</p>}
+            </form>
+          </div>
+        )}
         {!loggedIn ? (
           showValidationSuccess ? (
             <div className="validation-success">
@@ -466,12 +688,10 @@ function App() {
                   <label>{translations[language].loginUsernameLabel}</label>
                   <input
                     type="text"
-                    name={`username_${Date.now()}`} // Dynamic name to confuse browsers
                     value={loginUsername}
                     onChange={(e) => setLoginUsername(e.target.value)}
                     placeholder={translations[language].loginPlaceholder}
                     disabled={isProcessing}
-                    autoComplete="off" // Prevent saving username
                   />
                 </div>
                 <div>
@@ -482,14 +702,11 @@ function App() {
                     onChange={(e) => setSecretCode(e.target.value)}
                     placeholder={translations[language].secretCodePlaceholder}
                     disabled={isProcessing}
-                    autoComplete="off" // Prevent saving secret code
                   />
                 </div>
                 <button type="submit" disabled={isProcessing}>
                   {isProcessing ? (
                     <span className="spinner-dots">
-                      <span></span>
-                      <span></span>
                       <span></span>
                       <span></span>
                       <span></span>
@@ -503,7 +720,7 @@ function App() {
             </div>
           ) : (
             <>
-              <form onSubmit={handleLogin} autoComplete="off">
+              <form onSubmit={handleLogin}>
                 <div>
                   <label>{translations[language].loginUsernameLabel}</label>
                   <input
@@ -512,19 +729,16 @@ function App() {
                     onChange={(e) => setLoginUsername(e.target.value)}
                     placeholder={translations[language].loginPlaceholder}
                     disabled={isProcessing}
-                    autoComplete="off" // Prevent saving username
                   />
                 </div>
                 <div>
                   <label>{translations[language].loginPasswordLabel}</label>
                   <input
                     type={showLoginPassword ? 'text' : 'password'}
-                    name={'password_' + Date.now()} // Dynamic name to confuse browsers
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
                     placeholder={translations[language].passwordPlaceholder}
                     disabled={isProcessing}
-                    autoComplete="off" // Prevent saving password
                   />
                   <button
                     type="button"
@@ -532,6 +746,7 @@ function App() {
                     onClick={() => setShowLoginPassword(!showLoginPassword)}
                     disabled={isProcessing}
                     aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                    title={showLoginPassword ? 'Hide password' : 'Show password'}
                   >
                     <i className={showLoginPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
                   </button>
@@ -561,6 +776,7 @@ function App() {
               </form>
               <div className="turnstile-container">
                 <Turnstile
+                  ref={turnstileRef}
                   siteKey={TURNSTILE_SITE_KEY}
                   onSuccess={(token) => setTurnstileToken(token)}
                   onError={() => setTurnstileToken(null)}
@@ -575,8 +791,7 @@ function App() {
           )
         ) : (
           !showAdminForm && (
-            // Password Change Form
-            <form onSubmit={handleSubmit} autoComplete="off">
+            <form onSubmit={handleSubmit}>
               <p className="welcome">
                 {translations[language].welcome}
                 {displayName}!
@@ -595,14 +810,14 @@ function App() {
                       onChange={(e) => setPassword(e.target.value)}
                       placeholder={translations[language].newPasswordPlaceholder}
                       disabled={isProcessing}
-                      autoComplete="new-password" // Use new-password to prevent autofill
                     />
                     <button
                       type="button"
                       className="show-password"
                       onClick={() => setShowNewPassword(!showNewPassword)}
                       disabled={isProcessing}
-                      aria-label={showNewPassword ? 'Hide password' : 'Show password'}
+                      aria-label={showNewPassword ? 'Hide new password' : 'Show new password'}
+                      title={showNewPassword ? 'Hide new password' : 'Show new password'}
                     >
                       <i className={showNewPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
                     </button>
@@ -615,14 +830,14 @@ function App() {
                       onChange={(e) => setConfirmPassword(e.target.value)}
                       placeholder={translations[language].confirmPlaceholder}
                       disabled={isProcessing}
-                      autoComplete="new-password" // Use new-password to prevent autofill
                     />
                     <button
                       type="button"
                       className="show-password"
                       onClick={() => setShowConfirmPassword(!showConfirmPassword)}
                       disabled={isProcessing}
-                      aria-label={showConfirmPassword ? 'Hide password' : 'Show password'}
+                      aria-label={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
+                      title={showConfirmPassword ? 'Hide confirm password' : 'Show confirm password'}
                     >
                       <i className={showConfirmPassword ? 'bi bi-eye' : 'bi bi-eye-slash'}></i>
                     </button>
@@ -630,8 +845,6 @@ function App() {
                   <button type="submit" disabled={isProcessing}>
                     {isProcessing ? (
                       <span className="spinner-dots">
-                        <span></span>
-                        <span></span>
                         <span></span>
                         <span></span>
                         <span></span>
@@ -652,7 +865,7 @@ function App() {
         <button
           className="language-toggle"
           onClick={() => setLanguage(language === 'en' ? 'vi' : 'en')}
-          disabled={isProcessing}
+          disabled={isProcessing || showAdminForm}
         >
           {language === 'en' ? 'Tiếng Việt' : 'English'}
         </button>
@@ -660,7 +873,7 @@ function App() {
           <button
             className="admin-button"
             onClick={() => setShowAdminForm(true)}
-            disabled={isProcessing}
+            disabled={isProcessing || showAdminForm}
           >
             {translations[language].adminButton}
           </button>
@@ -669,65 +882,13 @@ function App() {
           <button
             className="logout"
             onClick={handleLogout}
-            disabled={isProcessing}
+            disabled={isProcessing || showAdminForm}
           >
             {translations[language].logoutButton}
           </button>
         )}
       </div>
 
-      {showAdminForm && (
-        <div className="admin-form">
-          <button
-            type="button"
-            className="close-button"
-            onClick={() => setShowAdminForm(false)}
-            disabled={isProcessing}
-            aria-label="Close admin form"
-          >
-            <i className="bi bi-x"></i>
-          </button>
-          <form onSubmit={handleGenerateCode}>
-            <p>{translations[language].adminFormTitle}</p>
-            <div>
-              <label>{translations[language].usernameLabel}</label>
-              <input
-                type="text"
-                value={targetUsername}
-                onChange={(e) => setTargetUsername(e.target.value)}
-                placeholder={translations[language].loginPlaceholder}
-                disabled={isProcessing}
-                autoComplete="off" // Prevent saving username
-              />
-            </div>
-            <div>
-              <label>{translations[language].secretCodeLabel}</label>
-              <input
-                type="text"
-                value={newSecretCode}
-                onChange={(e) => setNewSecretCode(e.target.value)}
-                placeholder={translations[language].secretCodePlaceholder}
-                disabled={isProcessing}
-                autoComplete="off" // Prevent saving secret code
-              />
-            </div>
-            <button type="submit" disabled={isProcessing}>
-              {isProcessing ? (
-                <span className="spinner-dots">
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                  <span></span>
-                </span>
-              ) : (
-                translations[language].generateButton
-              )}
-            </button>
-            {adminMessage && <p className={adminMessage.type}>{adminMessage.text}</p>}
-          </form>
-        </div>
-      )}
       <div className="credit">
         Created by Nguyễn Trần Hưng
       </div>
